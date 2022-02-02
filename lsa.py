@@ -82,7 +82,7 @@ def run_lsa(model, options):
 
     #Active Subspace Analysis
     if options.lsa.run_param_subset:
-        reduced_model, active_set, inactive_set = get_active_subspace(model, options.lsa)
+        reduced_model, active_set, inactive_set = get_active_subset(model, options.lsa)
         #Collect Outputs and return as an lsa object
         return LsaResults(jacobian=jac_raw, rsi=jac_rsi, fisher=fisher_mat,\
                           reduced_model=reduced_model, active_set=active_set,\
@@ -168,8 +168,8 @@ def get_jacobian(eval_fcn, x_base, lsa_options, **kwargs):
 
 
 ##--------------------------------------------Parameter dimension reduction------------------------------------------------------
-def get_active_subspace(model,lsa_options):
-    """Calculates scaled or unscaled jacobian using different derivative approximation methods.
+def get_active_subset(model,lsa_options):
+    """Calculates active and inactive parameter subsets.
         --Not fully function, reduced model is still full model
     
     Parameters
@@ -225,7 +225,7 @@ def get_active_subspace(model,lsa_options):
     return reduced_model, active_set, inactive_set
 
 def model_reduction(model,inactive_param):
-    """Calculates scaled or unscaled jacobian using different derivative approximation methods.
+    """Computes a new Model object using only active parameter set"
         -Not fully function, reduced model is still full model
         
     Parameters
@@ -256,6 +256,22 @@ def model_reduction(model,inactive_param):
     return reduced_model
 
 def get_reduced_pois(reduced_poi,droppedIndices,model):
+    """Calculates scaled or unscaled jacobian using different derivative approximation methods.
+        -Not fully function, reduced model is still full model
+        
+    Parameters
+    ----------
+    model : Model
+        Original run information
+    inactive_param : Lsa_Options
+        Holds run options
+    
+        
+    Returns
+    -------
+    Model 
+        New model using reduced parameters
+    """
     full_poi=model.base_poi
     reduced_counter=0
     print(droppedIndices)
