@@ -32,7 +32,7 @@ import gsa
 #--------------------------------------gsaOptions------------------------------------------------
 
 #--------------------------------------plotOptions------------------------------------------------
-class plotOptions:
+class PlotOptions:
     def __init__(self,run=True,n_points=400,path=False):
         self.run=run
         self.n_points=n_points
@@ -40,8 +40,8 @@ class plotOptions:
         pass
 #--------------------------------------uqOptions------------------------------------------------
 #   Class holding the above options subclasses
-class uqOptions:
-    def __init__(self,lsa=lsa.options(),plot=plotOptions(),gsa=gsa.options(), \
+class Options:
+    def __init__(self,lsa=lsa.LsaOptions(),plot=PlotOptions(),gsa=gsa.GsaOptions(), \
                  display=True, save=False, path='..'):
         self.lsa=lsa
         self.plot=plot
@@ -56,12 +56,12 @@ class uqOptions:
 
 ##-------------------------------------model------------------------------------------------------
 #Define class "model", this will be the class used to collect input information for all functions
-class model:
+class Model:
     #Model sets should be initialized with base parameter settings, covariance Matrix, and eval function that
     #   takes in a vector of POIs and outputs a vector of QOIs
     def __init__(self,base_poi=np.empty(0), name_poi = np.empty(0), \
                  name_qoi= np. empty(0), cov=np.empty(0), \
-                 eval_fcn=np.empty(0), dist='unif',dist_param='null'):
+                 eval_fcn=np.empty(0), dist='unif', dist_param="auto"):
         self.base_poi=base_poi
         if not isinstance(self.base_poi,np.ndarray):                    #Confirm that base_poi is a numpy array
             warnings.warn("model.base_poi is not a numpy array")
@@ -71,14 +71,14 @@ class model:
                 raise Exception("Error! More than one dimension of size 1 detected for model.base_poi, model.base_poi must be dimension 1")
             else:                                                       #Issue a warning if dimensions were squeezed out of base POIs
                 warnings.warn("model.base_poi was reduced a dimension 1 array. No entries were deleted.")
-        self.nPOIs=self.base_poi.size
+        self.n_poi=self.base_poi.size
         #Assign name_poi
         self.name_poi = name_poi                                            #Assign name_poi called
-        if (self.name_poi.size != self.nPOIs) & (self.name_poi.size !=0):   #Check that correct size if given
+        if (self.name_poi.size != self.n_poi) & (self.name_poi.size !=0):   #Check that correct size if given
             warnings.warn("name_poi entered but the number of names does not match the number of POIs. Ignoring names.")
             self.name_poi=np.empty(0)
         if self.name_poi.size==0:                                           #If not given or incorrect size, number POIs
-            POInumbers=np.arange(0,self.nPOIs)
+            POInumbers=np.arange(0,self.n_poi)
             self.name_poi=np.char.add('POI',POInumbers.astype('U'))
         #Assign evaluation function and compute base_qoi
         self.eval_fcn=eval_fcn
@@ -86,47 +86,65 @@ class model:
         if not isinstance(self.base_qoi,np.ndarray):                    #Confirm that base_qoi is a numpy array
             warnings.warn("model.base_qoi is not a numpy array")
         print(self.base_qoi)
-        self.nQOIs=len(self.base_qoi)
+        self.n_qoi=len(self.base_qoi)
         #Assign QOI names
         self.name_qoi = name_qoi
-        if (self.name_qoi.size !=self.nQOIs) & (self.name_qoi.size !=0):    #Check names if given match number of QOIs
+        if (self.name_qoi.size !=self.n_qoi) & (self.name_qoi.size !=0):    #Check names if given match number of QOIs
             warnings.warn("name_qoi entered but the number of names does not match the number of QOIs. Ignoring names.")
             self.name_qoi = np.empty(0)
         if self.name_qoi.size==0:                                 #If not given or incorrect size, number QOIs
-            QOInumbers = np.arange(0, self.nQOIs)
-            self.nam,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,e_qoi = np.char.add('QOI', QOInumbers.astype('U'))
+            QOInumbers = np.arange(0, self.n_qoi)
+            self.name_qoi = np.char.add('QOI', QOInumbers.astype('U'))
         #Assign covariance matrix
         self.cov=cov
-        if self.cov.size!=0 and np.shape(self.cov)!=(self.nPOIs,self.nPOIs): #Check correct sizing
+        if self.cov.size!=0 and np.shape(self.cov)!=(self.n_poi,self.n_poi): #Check correct sizing
             raise Exception("Error! model.cov is not an nPOI x nPOI array")
+        
         #Assign distributions
-        self.dist = dist                        #String identifying sampling distribution for parameters
-                                                #       Supported distributions: unif, normal, exponential, beta, inverseCDF
-        if isinstance(dist_param,str):
+        self.dist = dist   
+        
+        #Parse through possible options for dist_param: 
+        # 1) False (use base settings)
+        # 2) numpy array (check dimensions align with n_pois and dist requirements)
+        # Otherwise raise exception
+        if str(dist_param).lower() == 'auto':
             if self.dist.lower()=='uniform':
-                self.dist_param=[[.8],[1.2]]*np.ones((2,self.nPOIs))*self.base_poi
+                self.dist_param=[[.8],[1.2]]*np.ones((2,self.n_poi))*self.base_poi
             elif self.dist.lower()=='normal':
                 if cov.size()==0:
-                    self.dist_param=[[1],[.2]]*np.ones((2,self.nPOIs))*self.base_poi
+                    self.dist_param=[[1],[.2]]*np.ones((2,self.n_poi))*self.base_poi
                 else:
                     self.dist_param=[self.base_poi, np.diag(self.cov,k=0)]
             elif dist_param.lower() == 'null':
                 self.dist_param = dist_param
             else:
                 raise Exception("Unrecognized entry for dist_param: " + str(dist_param))
-
+        elif type(dist_param) == np.ndarray:
+            #Check dimensions of numpy array are correct
+            if dist_param.shape[1] == self.n_poi:
+                # Correct number of parameters for each distribution
+                if dist == "unif" and dist_param.shape[0]!=2:
+                    raise Exception("2 parameters per POI required for uniform")
+                elif dist == "normal" and dist_param.shape[0]!=2:
+                    raise Exception("2 parameters per POI required for normal")
+                else :
+                    self.dist_param=dist_param
+            else:
+                raise Exception("Incorrect shape of dist_param. Given shape: "\
+                                + dist_param.shape + ", desired shape: ... x n_poi")     
         else:
-            self.dist_param=dist_param
+            raise Exception("Incorrect data-type for dist_param, use ndarray or 'auto'")
+    # Hidden parameters - parameters that are not set in calling and should not be adjusted
     pass
     def copy(self):
-        return model(base_poi=self.base_poi, name_poi = self.name_poi, name_qoi= self.name_qoi, cov=self.cov, \
+        return Model(base_poi=self.base_poi, name_poi = self.name_poi, name_qoi= self.name_qoi, cov=self.cov, \
                  eval_fcn=self.eval_fcn, dist=self.dist,dist_param=self.dist_param)
 
 ##------------------------------------results-----------------------------------------------------
 # Define class "results" which holds a gsaResults object and lsaResults object
 
-class results:
-    def __init__(self,lsa=lsa.results(), gsa=gsa.results()):
+class Results:
+    def __init__(self,lsa=lsa.LsaResults(), gsa=gsa.GsaResults()):
         self.lsa=lsa
         self.gsa=gsa
     pass
@@ -155,9 +173,10 @@ def run_uq(model, options):
     Results 
         Object of class Results holding all run results.
     """
+    results = Results()
     #Run Local Sensitivity Analysis
     if options.lsa.run:
-        results.lsa = lsa.run_la(model, options)
+        results.lsa = lsa.run_lsa(model, options.lsa)
 
     #Run Global Sensitivity Analysis
     # if options.gsa.run:
@@ -166,7 +185,7 @@ def run_uq(model, options):
         #     results.gsa=GSA(results.lsa.reducedModel, options)
         # else:
     if options.gsa.run:
-        results.gsa = gsa.run_gsa(model, options)
+        results.gsa = gsa.run_gsa(model, options.gsa)
 
     #Print Results
     if options.display:
@@ -179,8 +198,8 @@ def run_uq(model, options):
         sys.stdout=original_stdout                              #Revert normal output path
 
     #Plot Samples
-    if options.gsa.runSobol & options.gsa.run:
-        plot_gsa(model, results.gsa.sampD, results.gsa.fD, options)
+    if options.gsa.run_sobol & options.gsa.run:
+        plot_gsa(model, results.gsa.samp_d, results.gsa.f_d, options)
 
     return results
 
@@ -200,7 +219,7 @@ def print_results(results,model,options):
     """
     # Print Results
     #Results Header
-    print('Sensitivity results for nSampSobol=' + str(options.gsa.nSampSobol))
+    print('Sensitivity results for nSampSobol=' + str(options.gsa.n_samp_sobol))
     #Local Sensitivity Analysis
     if options.lsa.run:
         print('\n Base POI Values')
@@ -208,42 +227,42 @@ def print_results(results,model,options):
         print('\n Base QOI Values')
         print(tabulate([model.base_qoi], headers=model.name_qoi))
         print('\n Sensitivity Indices')
-        print(tabulate(np.concatenate((model.name_poi.reshape(model.nPOIs,1),np.transpose(results.lsa.jac)),1),
+        print(tabulate(np.concatenate((model.name_poi.reshape(model.n_poi,1),np.transpose(results.lsa.jac)),1),
               headers= np.append("",model.name_qoi)))
         print('\n Relative Sensitivity Indices')
-        print(tabulate(np.concatenate((model.name_poi.reshape(model.nPOIs,1),np.transpose(results.lsa.rsi)),1),
+        print(tabulate(np.concatenate((model.name_poi.reshape(model.n_poi,1),np.transpose(results.lsa.rsi)),1),
               headers= np.append("",model.name_qoi)))
         #print("Fisher Matrix: " + str(results.lsa.fisher))
         #Active Subsapce Analysis
         print('\n Active Supspace')
-        print(results.lsa.activeSpace)
+        print(results.lsa.active_set)
         print('\n Inactive Supspace')
-        print(results.lsa.inactiveSpace)
+        print(results.lsa.inactive_set)
     if options.gsa.run: 
-        if options.gsa.runSobol:
-            if model.nQOIs==1:
+        if options.gsa.run_sobol:
+            if model.n_qoi==1:
                 print('\n Sobol Indices for ' + model.name_qoi[0])
-                print(tabulate(np.concatenate((model.name_poi.reshape(model.nPOIs,1), results.gsa.sobolBase.reshape(model.nPOIs,1), \
-                                               results.gsa.sobolTot.reshape(model.nPOIs,1)), 1),
+                print(tabulate(np.concatenate((model.name_poi.reshape(model.n_poi,1), results.gsa.sobol_base.reshape(model.n_poi,1), \
+                                               results.gsa.sobol_tot.reshape(model.n_poi,1)), 1),
                                headers=["", "1st Order", "Total Sensitivity"]))
             else:
-                for iQOI in range(0,model.nQOIs):
+                for iQOI in range(0,model.n_qoi):
                     print('\n Sobol Indices for '+ model.name_qoi[iQOI])
-                    print(tabulate(np.concatenate((model.name_poi.reshape(model.nPOIs,1),results.gsa.sobolBase[[iQOI],:].reshape(model.nPOIs,1), \
-                        results.gsa.sobolTot[[iQOI],:].reshape(model.nPOIs,1)),1), headers = ["", "1st Order", "Total Sensitivity"]))
+                    print(tabulate(np.concatenate((model.name_poi.reshape(model.n_poi,1),results.gsa.sobol_base[[iQOI],:].reshape(model.n_poi,1), \
+                        results.gsa.sobol_tot[[iQOI],:].reshape(model.n_poi,1)),1), headers = ["", "1st Order", "Total Sensitivity"]))
     
-        if options.gsa.runMorris:
-            if model.nQOIs==1:
+        if options.gsa.run_morris:
+            if model.n_qoi==1:
                 print('\n Morris Screening Results for' + model.name_qoi[0])
-                print(tabulate(np.concatenate((model.name_poi.reshape(model.nPOIs, 1), results.gsa.muStar.reshape(model.nPOIs, 1), \
-                                               results.gsa.sigma2.reshape(model.nPOIs, 1)), 1),
-                    headers=["", "muStar", "sigma2"]))
+                print(tabulate(np.concatenate((model.name_poi.reshape(model.n_poi, 1), results.gsa.mu_star.reshape(model.n_poi, 1), \
+                                               results.gsa.sigma2.reshape(model.n_poi, 1)), 1),
+                    headers=["", "mu_star", "sigma2"]))
             else:
                 print('\n Morris Screening Results for' + model.name_qoi[iQOI])
                 print(tabulate(np.concatenate(
-                    (model.name_poi.reshape(model.nPOIs, 1), results.gsa.muStar[[iQOI], :].reshape(model.nPOIs, 1), \
-                     results.gsa.sigma2[[iQOI], :].reshape(model.nPOIs, 1)), 1),
-                    headers=["", "muStar", "sigma2"]))
+                    (model.name_poi.reshape(model.n_poi, 1), results.gsa.mu_star[[iQOI], :].reshape(model.n_poi, 1), \
+                     results.gsa.sigma2[[iQOI], :].reshape(model.n_poi, 1)), 1),
+                    headers=["", "mu_star", "sigma2"]))
 
 ###----------------------------------------------------------------------------------------------
 ###-------------------------------------Support Functions----------------------------------------
@@ -275,8 +294,8 @@ def plot_gsa(model, sample_mat, eval_mat, options):
     #Make the number of sample points to survey
     plotPoints=np.linspace(start=0, stop=sample_mat.shape[0]-1, num=options.plot.n_points, dtype=int)
     #Plot POI-POI correlation and distributions
-    figure, axes=plt.subplots(nrows=model.nPOIs, ncols= model.nPOIs, squeeze=False)
-    for iPOI in range(0,model.nPOIs):
+    figure, axes=plt.subplots(nrows=model.n_poi, ncols= model.n_poi, squeeze=False)
+    for iPOI in range(0,model.n_poi):
         for jPOI in range(0,iPOI+1):
             if iPOI==jPOI:
                 n, bins, patches = axes[iPOI, jPOI].hist(sample_mat[:,iPOI], bins=41)
@@ -284,17 +303,17 @@ def plot_gsa(model, sample_mat, eval_mat, options):
                 axes[iPOI, jPOI].plot(sample_mat[plotPoints,iPOI], sample_mat[plotPoints,jPOI],'b*')
             if jPOI==0:
                 axes[iPOI,jPOI].set_ylabel(model.name_poi[iPOI])
-            if iPOI==model.nPOIs-1:
+            if iPOI==model.n_poi-1:
                 axes[iPOI,jPOI].set_xlabel(model.name_poi[jPOI])
-            if model.nPOIs==1:
+            if model.n_poi==1:
                 axes[iPOI,jPOI].set_ylabel('Instances')
     figure.tight_layout()
     if options.path:
         plt.savefig(options.path+"POIcorrelation.png")
 
     #Plot QOI-QOI correlationa and distributions
-    figure, axes=plt.subplots(nrows=model.nQOIs, ncols= model.nQOIs, squeeze=False)
-    for iQOI in range(0,model.nQOIs):
+    figure, axes=plt.subplots(nrows=model.n_qoi, ncols= model.n_qoi, squeeze=False)
+    for iQOI in range(0,model.n_qoi):
         for jQOI in range(0,iQOI+1):
             if iQOI==jQOI:
                 axes[iQOI, jQOI].hist([eval_mat[:,iQOI]], bins=41)
@@ -302,22 +321,22 @@ def plot_gsa(model, sample_mat, eval_mat, options):
                 axes[iQOI, jQOI].plot(eval_mat[plotPoints,iQOI], eval_mat[plotPoints,jQOI],'b*')
             if jQOI==0:
                 axes[iQOI,jQOI].set_ylabel(model.name_qoi[iQOI])
-            if iQOI==model.nQOIs-1:
+            if iQOI==model.n_qoi-1:
                 axes[iQOI,jQOI].set_xlabel(model.name_qoi[jQOI])
-            if model.nQOIs==1:
+            if model.n_qoi==1:
                 axes[iQOI,jQOI].set_ylabel('Instances')
     figure.tight_layout()
     if options.path:
         plt.savefig(options.path+"QOIcorrelation.png")
 
     #Plot POI-QOI correlation
-    figure, axes=plt.subplots(nrows=model.nQOIs, ncols= model.nPOIs, squeeze=False)
-    for iQOI in range(0,model.nQOIs):
-        for jPOI in range(0, model.nPOIs):
+    figure, axes=plt.subplots(nrows=model.n_qoi, ncols= model.n_poi, squeeze=False)
+    for iQOI in range(0,model.n_qoi):
+        for jPOI in range(0, model.n_poi):
             axes[iQOI, jPOI].plot(sample_mat[plotPoints,jPOI], eval_mat[plotPoints,iQOI],'b*')
             if jPOI==0:
                 axes[iQOI,jPOI].set_ylabel(model.name_qoi[iQOI])
-            if iQOI==model.nQOIs-1:
+            if iQOI==model.n_qoi-1:
                 axes[iQOI,jPOI].set_xlabel(model.name_poi[jPOI])
     if options.path:
         plt.savefig(options.path+"POI_QOIcorrelation.png")

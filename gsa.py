@@ -130,11 +130,11 @@ def get_samples(model,gsa_options):
     n_samp_sobol = gsa_options.n_samp_sobol
     # Make 2 POI sample matrices with n_samp_sobol samples each
     if model.dist.lower()=='uniform' or model.dist.lower()=='saltellinormal':
-        (samp_a, samp_b)=model.samp_dist(n_samp_sobol);                                     #Get both A and B samples so no repeated values
+        (samp_a, samp_b)=model.sample(n_samp_sobol);                                     #Get both A and B samples so no repeated values
     else:
         #-------Error, need to switch these samplings to the join Saltelli-------------
-        samp_a = model.samp_dist(n_samp_sobol)
-        samp_b = model.samp_dist(n_samp_sobol)
+        samp_a = model.sample(n_samp_sobol)
+        samp_b = model.sample(n_samp_sobol)
     # Calculate matrices of QOI values for each POI sample matrix
     f_a = model.eval_fcn(samp_a).reshape([n_samp_sobol, model.n_qoi])  # n_samp_sobol x nQOI out matrix from A
     f_b = model.eval_fcn(samp_b).reshape([n_samp_sobol, model.n_qoi])  # n_samp_sobol x nQOI out matrix from B
@@ -180,7 +180,7 @@ def calculate_sobol(f_a, f_b, f_ab, f_d):
         n_qoi x n_poi array of total Sobol indices
     """
     #Calculates calculates sobol indices using satelli approximation method
-    #Inputs: model object (with eval_fcn, samp_dist, and nParams)
+    #Inputs: model object (with eval_fcn, sample, and nParams)
     #        sobolOptions object
     #Determing number of samples, QOIs, and POIs based on inputs
     if f_ab.ndim==1:
@@ -238,7 +238,7 @@ def calculate_morris(model,gsa_options):
     #Define delta
     delta=(gsa_options.l_morris+1)/(2*gsa_options.l_morris)
     #Get Parameter Samples- use parameter distribution
-    param_samp=model.dist(gsa_options.n_samp_morris)[0]
+    param_samp=model.sample(gsa_options.n_samp_morris)[0]
     #Calulate derivative indices
     d= np.empty((gsa_options.n_samp_morris, model.n_poi, model.n_qoi)) #n_qoi x n_poi x nSamples
     #Define constant sampling matrices
@@ -255,7 +255,7 @@ def calculate_morris(model,gsa_options):
         fBj=model.eval_fcn(Bj)
         for i_poi in np.arange(0,model.n_poi):
             index_nonzero=np.nonzero(Bj[i_poi+1,:]-Bj[i_poi,:])[0][0]
-            print(np.nonzero(Bj[i_poi+1,:]-Bj[i_poi,:]))
+            #print(np.nonzero(Bj[i_poi+1,:]-Bj[i_poi,:]))
             if Bj[i_poi+1,index_nonzero]-Bj[i_poi,index_nonzero]>0:
                 if model.n_qoi==1:
                     d[i_samp,index_nonzero]=(fBj[i_poi+1]-fBj[i_poi])/delta
@@ -277,7 +277,7 @@ def calculate_morris(model,gsa_options):
 
 ##--------------------------------------GetSampDist----------------------------------------------------
 def get_samp_dist(model, gsa_options):
-    """Adds sampling function samp_dist to model for drawing of low-discrepency
+    """Adds sampling function sample to model for drawing of low-discrepency
         from given distribution type.
     
     Parameters
@@ -290,27 +290,27 @@ def get_samp_dist(model, gsa_options):
     Returns
     -------
     Model
-        model object with added samp_dist function
+        model object with added sample function
     """
     # Determine Sample Function- Currently only 1 distribution type can be defined for all parameters
     if model.dist.lower() == 'normal':  # Normal Distribution
-        samp_dist = lambda n_samp_sobol: np.random.randn(n_samp_sobol,model.n_poi)*np.sqrt(model.dist_param[[1], :]) + model.dist_param[[0], :]
+        sample = lambda n_samp_sobol: np.random.randn(n_samp_sobol,model.n_poi)*np.sqrt(model.dist_param[[1], :]) + model.dist_param[[0], :]
     elif model.dist.lower() == 'saltellinormal':
-        samp_dist = lambda n_samp_sobol: saltelli_normal(n_samp_sobol, model.dist_param)
+        sample = lambda n_samp_sobol: saltelli_normal(n_samp_sobol, model.dist_param)
     elif model.dist.lower() == 'uniform':  # uniform distribution
         # doubleParms=np.concatenate(model.dist_param, model.dist_param, axis=1)
-        samp_dist = lambda n_samp_sobol: saltelli_sample(n_samp_sobol,model.dist_param)
+        sample = lambda n_samp_sobol: saltelli_sample(n_samp_sobol,model.dist_param)
     elif model.dist.lower() == 'exponential': # exponential distribution
-        samp_dist = lambda n_samp_sobol: np.random.exponential(model.dist_param,size=(n_samp_sobol,model.n_poi))
+        sample = lambda n_samp_sobol: np.random.exponential(model.dist_param,size=(n_samp_sobol,model.n_poi))
     elif model.dist.lower() == 'beta': # beta distribution
-        samp_dist = lambda n_samp_sobol:np.random.beta(model.dist_param[[0],:], model.dist_param[[1],:],\
+        sample = lambda n_samp_sobol:np.random.beta(model.dist_param[[0],:], model.dist_param[[1],:],\
                                                size=(n_samp_sobol,model.n_poi))
     elif model.dist.lower() == 'InverseCDF': #Arbitrary distribution given by inverse cdf
-        samp_dist = lambda n_samp_sobol: gsa_options.fcn_inverse_cdf(np.random.rand(n_samp_sobol,model.n_poi))
+        sample = lambda n_samp_sobol: gsa_options.fcn_inverse_cdf(np.random.rand(n_samp_sobol,model.n_poi))
     else:
         raise Exception("Invalid value for gsa_options.dist. Supported distributions are normal, uniform, exponential, beta, \
         and InverseCDF")  # Raise Exception if invalide distribution is entered
-    model.samp_dist=samp_dist
+    model.sample=sample
     return model
 
 

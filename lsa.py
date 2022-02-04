@@ -51,7 +51,7 @@ class LsaResults:
     pass
 
 
-def run_lsa(model, options):
+def run_lsa(model, lsa_options):
     """Implements local sensitivity analysis using LSI, RSI, and parameter subset reduction.
     
     Parameters
@@ -74,15 +74,15 @@ def run_lsa(model, options):
     # Outputs: Object of class lsa with Jacobian, RSI, and Fisher information matrix
 
     # Calculate Jacobian
-    jac_raw=get_jacobian(model.eval_fcn, model.base_poi, options.lsa, scale=False, y_base=model.base_qoi)
+    jac_raw=get_jacobian(model.eval_fcn, model.base_poi, lsa_options, scale=False, y_base=model.base_qoi)
     # Calculate relative sensitivity index (RSI)
-    jac_rsi=get_jacobian(model.eval_fcn, model.base_poi, options.lsa, scale=True, y_base=model.base_qoi)
+    jac_rsi=get_jacobian(model.eval_fcn, model.base_poi, lsa_options, scale=True, y_base=model.base_qoi)
     # Calculate Fisher Information Matrix from jacobian
     fisher_mat=np.dot(np.transpose(jac_raw), jac_raw)
 
     #Active Subspace Analysis
-    if options.lsa.run_param_subset:
-        reduced_model, active_set, inactive_set = get_active_subset(model, options.lsa)
+    if lsa_options.run_param_subset:
+        reduced_model, active_set, inactive_set = get_active_subset(model, lsa_options)
         #Collect Outputs and return as an lsa object
         return LsaResults(jacobian=jac_raw, rsi=jac_rsi, fisher=fisher_mat,\
                           reduced_model=reduced_model, active_set=active_set,\
@@ -274,11 +274,11 @@ def get_reduced_pois(reduced_poi,droppedIndices,model):
     """
     full_poi=model.base_poi
     reduced_counter=0
-    print(droppedIndices)
+    #print(droppedIndices)
     for i_poi in np.arange(0,model.n_poi):
-        print(i_poi)
+        #print(i_poi)
         if droppedIndices==i_poi:
             full_poi[i_poi]=reduced_poi[reduced_counter]
             reduced_counter=reduced_counter+1
-    print(full_poi)
+    #print(full_poi)
     return full_poi
