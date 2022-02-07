@@ -74,7 +74,7 @@ def run_lsa(model, lsa_options):
     # Outputs: Object of class lsa with Jacobian, RSI, and Fisher information matrix
 
     # Calculate Jacobian
-    jac_raw=get_jacobian(model.eval_fcn, model.base_poi, lsa_options, scale=False, y_base=model.base_qoi)
+    jac_raw=get_jacobian(model.eval_fcn, model.base_poi, lsa_options.x_delta, lsa_options.method, scale=False, y_base=model.base_qoi)
     # Calculate relative sensitivity index (RSI)
     jac_rsi=get_jacobian(model.eval_fcn, model.base_poi, lsa_options, scale=True, y_base=model.base_qoi)
     # Calculate Fisher Information Matrix from jacobian
@@ -98,7 +98,7 @@ def run_lsa(model, lsa_options):
     
   
 ##--------------------------------------GetJacobian-----------------------------------------------------
-def get_jacobian(eval_fcn, x_base, lsa_options, **kwargs):
+def get_jacobian(eval_fcn, x_base, x_delta, method, **kwargs):
     """Calculates scaled or unscaled jacobian using different derivative approximation methods.
     
     Parameters
@@ -119,10 +119,6 @@ def get_jacobian(eval_fcn, x_base, lsa_options, **kwargs):
     np.ndarray 
         Scaled or unscaled jacobian
     """
-    # GetJacobian calculates the Jacobian for n QOIs and p POIs
-    # Required Inputs: object of class "model" (.cov element not required)
-    #                  object of class "LsaOptions"
-    # Optional Inputs: alternate POI position to estimate Jacobian at (*arg) or complex step size (h)
     if 'scale' in kwargs:                                                   # Determine whether to scale derivatives
                                                                             #   (for use in relative sensitivity indices)
         scale = kwargs["scale"]
@@ -132,11 +128,37 @@ def get_jacobian(eval_fcn, x_base, lsa_options, **kwargs):
         scale = False                                                       # Function defaults to no scaling
     if 'y_base' in kwargs:
         y_base = kwargs["y_base"]
+        # Make sure x_base is int/ float and convert to numpy array
+        if type(y_base)==int or type(y_base)==float:
+            y_base = np.array([y_base])
+        elif type(x_base)== list:
+            y_list = y_base
+            y_base = np.empty(len(y_list))
+            for i_poi in len(y_list):
+                if type(y_list[i_poi])==int or type(y_list[i_poi])==float:
+                   y_base[i_poi] = y_list[i_poi]
+                else:
+                    raise Exception(str(i_poi) + "th y_base value is of type:  " + str(type(y_list[i_poi])))
+        elif type(y_base)!= np.ndarray:
+            raise Exception("y_base of type " + str(type(y_base)) + ". Accepted" \
+                            " types are int/ float and list or numpy arrays of ints/ floats")
     else:
         y_base = eval_fcn(x_base)
 
-    #Load options parameters for increased readibility
-    x_delta=lsa_options.x_delta
+    # Make sure x_base is int/ float and convert to numpy array
+    if type(x_base)==int or type(x_base)==float:
+        x_base = np.array([x_base])
+    elif type(x_base)== list:
+        x_list = x_base
+        x_base = np.empty(len(x_list))
+        for i_poi in len(x_list):
+            if type(x_list[i_poi])==int or type(x_list[i_poi])==float:
+               x_base[i_poi] = x_list[i_poi]
+            else:
+                raise Exception(str(i_poi) + "th x_base value is of type:  " + str(type(x_list[i_poi])))
+    elif type(x_base)!= np.ndarray:
+        raise Exception("x_base of type " + str(type(x_base)) + ". Accepted" \
+                        " types are int/ float and list or numpy arrays of ints/ floats")
 
     #Initialize base QOI value, the number of POIs, and number of QOIs
     n_poi = np.size(x_base)
@@ -146,16 +168,16 @@ def get_jacobian(eval_fcn, x_base, lsa_options, **kwargs):
 
     for i_poi in range(0, n_poi):                                            # Loop through POIs
         # Isolate Parameters
-        if lsa_options.method.lower()== 'complex':
+        if method.lower()== 'complex':
             xPert = x_base + np.zeros(shape=x_base.shape)*1j                  # Initialize Complex Perturbed input value
             xPert[i_poi] += x_delta * 1j                                      # Add complex Step in input
-        elif lsa_options.method.lower() == 'finite':
+        elif method.lower() == 'finite':
             xPert=x_base*(1+x_delta)
         yPert = eval_fcn(xPert)                                        # Calculate perturbed output
         for i_qoi in range(0, n_qoi):                                        # Loop through QOIs
-            if lsa_options.method.lower()== 'complex':
+            if method.lower()== 'complex':
                 jac[i_qoi, i_poi] = np.imag(yPert[i_qoi] / x_delta)                 # Estimate Derivative w/ 2nd order complex
-            elif lsa_options.method.lower() == 'finite':
+            elif method.lower() == 'finite':
                 jac[i_qoi, i_poi] = (yPert[i_qoi]-y_base[i_qoi]) / x_delta
             #Only Scale Jacobian if 'scale' value is passed True in function call
             if scale:
@@ -241,7 +263,7 @@ def model_reduction(model,inactive_param):
     Model 
         New model using reduced parameters
     """
-    reduced_model = model.copy()
+    reduced_model = model
     # #Record Index of reduced param
     # inactive_index=np.where(reduced_model.name_poi==inactive_param)[0]
     # #confirm exactly parameter matches
@@ -255,30 +277,33 @@ def model_reduction(model,inactive_param):
     # print(reduced_model.eval_fcn(reduced_model.base_poi))
     return reduced_model
 
-def get_reduced_pois(reduced_poi,droppedIndices,model):
-    """Calculates scaled or unscaled jacobian using different derivative approximation methods.
-        -Not fully function, reduced model is still full model
+def get_reduced_pois(reduced_poi,dropped_indices,model):
+    """Maps from the space of reduced pois to the full poi set.
         
     Parameters
     ----------
+    reduced_poi : np.ndarray
+        Set of reduced parameter set values
+    dropped_indices : np.ndarray
+        Indices of dropped parameters
     model : Model
         Original run information
-    inactive_param : Lsa_Options
-        Holds run options
     
         
     Returns
     -------
-    Model 
+    np.ndarray 
         New model using reduced parameters
     """
+    #Load in full parameter set to start output
     full_poi=model.base_poi
+    #Use a counter to keep track of the index in full_pois based on index in
+    # reduced_pois
     reduced_counter=0
-    #print(droppedIndices)
     for i_poi in np.arange(0,model.n_poi):
-        #print(i_poi)
-        if droppedIndices==i_poi:
+        if dropped_indices==i_poi:
             full_poi[i_poi]=reduced_poi[reduced_counter]
             reduced_counter=reduced_counter+1
-    #print(full_poi)
+            
+            
     return full_poi
