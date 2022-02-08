@@ -74,9 +74,11 @@ def run_lsa(model, lsa_options):
     # Outputs: Object of class lsa with Jacobian, RSI, and Fisher information matrix
 
     # Calculate Jacobian
-    jac_raw=get_jacobian(model.eval_fcn, model.base_poi, lsa_options.x_delta, lsa_options.method, scale=False, y_base=model.base_qoi)
+    jac_raw=get_jacobian(model.eval_fcn, model.base_poi, lsa_options.x_delta,\
+                         lsa_options.method, scale=False, y_base=model.base_qoi)
     # Calculate relative sensitivity index (RSI)
-    jac_rsi=get_jacobian(model.eval_fcn, model.base_poi, lsa_options, scale=True, y_base=model.base_qoi)
+    jac_rsi=get_jacobian(model.eval_fcn, model.base_poi, lsa_options.x_delta,\
+                         lsa_options.method, scale=True, y_base=model.base_qoi)
     # Calculate Fisher Information Matrix from jacobian
     fisher_mat=np.dot(np.transpose(jac_raw), jac_raw)
 
@@ -127,7 +129,8 @@ def get_jacobian(eval_fcn, x_base, x_delta, method, **kwargs):
     else:
         scale = False                                                       # Function defaults to no scaling
     if 'y_base' in kwargs:
-        y_base = kwargs["y_base"]
+        y_base = eval_fcn(x_base)
+        #y_base = kwargs["y_base"]
         # Make sure x_base is int/ float and convert to numpy array
         if type(y_base)==int or type(y_base)==float:
             y_base = np.array([y_base])
@@ -172,13 +175,20 @@ def get_jacobian(eval_fcn, x_base, x_delta, method, **kwargs):
             xPert = x_base + np.zeros(shape=x_base.shape)*1j                  # Initialize Complex Perturbed input value
             xPert[i_poi] += x_delta * 1j                                      # Add complex Step in input
         elif method.lower() == 'finite':
-            xPert=x_base*(1+x_delta)
+            xPert = x_base.copy()
+            xPert[i_poi] += x_delta
         yPert = eval_fcn(xPert)                                        # Calculate perturbed output
         for i_qoi in range(0, n_qoi):                                        # Loop through QOIs
             if method.lower()== 'complex':
                 jac[i_qoi, i_poi] = np.imag(yPert[i_qoi] / x_delta)                 # Estimate Derivative w/ 2nd order complex
             elif method.lower() == 'finite':
+                print("xPert" + str(xPert))
+                print("x_base" + str(x_base))
+                print("yPert" + str(yPert))
+                print("y_base" + str(y_base))
+                print("x_delta" + str(x_delta))
                 jac[i_qoi, i_poi] = (yPert[i_qoi]-y_base[i_qoi]) / x_delta
+                print("Deriv: " + str(jac[i_qoi, i_poi]))
             #Only Scale Jacobian if 'scale' value is passed True in function call
             if scale:
                 jac[i_qoi, i_poi] *= x_base[i_poi] * np.sign(y_base[i_qoi]) / (sys.float_info.epsilon + y_base[i_qoi])
@@ -213,7 +223,8 @@ def get_active_subset(model,lsa_options):
     eliminate=True
     inactive_index=np.zeros(model.n_poi)
     #Calculate Jacobian
-    jac=get_jacobian(model.eval_fcn, model.base_poi, lsa_options, scale=False, y_base=model.base_qoi)
+    jac=get_jacobian(model.eval_fcn, model.base_poi, lsa_options.x_delta,\
+                         lsa_options.method, scale=False, y_base=model.base_qoi)
     while eliminate:
         #Caclulate Fisher
         fisher_mat=np.dot(np.transpose(jac), jac)
@@ -233,6 +244,7 @@ def get_active_subset(model,lsa_options):
         else:
             #Terminate Active Subspace if singular values within tolerance
             eliminate=False
+            
     #Define active and inactive spaces
     active_set=model.name_poi[inactive_index == False]
     inactive_set=model.name_poi[inactive_index == True]

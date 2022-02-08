@@ -23,7 +23,6 @@ def test_finite_diff_uni_poly():
     #Test random points
     c_rand = np.random.uniform(size = (4))
     x_rand = np.random.uniform()
-    x_rand = np.array([x_rand])
     
     fcn = lambda x: third_order_uni_poly(x,c_rand) 
     deriv_approx = get_jacobian(fcn, x_rand, 1e-8, "finite")
