@@ -274,6 +274,31 @@ def calculate_morris(model,gsa_options):
 
     return mu_star, sigma2
 
+def get_morris_poi_sample(param_dist, n_samp, n_poi, pert_distance, random = True):
+    #Use sobol distributions for low discrepancy
+    #Generate n_samp_morris samples
+    random_samp =  param_dist(n_samp)
+    #Define Sampling matrices that are constant
+    J=np.ones((n_poi+1,n_poi))
+    B = (np.tril(np.ones(J.shape), -1))
+    morris_samp = np.empty((n_samp*(n_poi+1), n_poi))
+    for i_samp in range(n_samp):
+        #Define Random Sampling matrices
+        D=np.diag(np.random.choice(np.array([1,-1]), size=(n_poi,)))
+        P=np.identity(n_poi)
+        np.random.shuffle(P)
+        jTheta=random_samp[i_samp,]*J
+        #Calculate Morris Sample matrix
+        #Source: Smith, R. 2011. Uncertainty Quantification. p.334
+        if random == True:  
+            samp_mat = np.matmul(jTheta+pert_distance/2*(np.matmul((2*B-J),D)+J),P)
+        elif random == False:
+            # Only use non-random formulations for testing matrix generation
+            samp_mat = jTheta+pert_distance/2*(np.matmul((2*B-J),D)+J)
+        #Stack each grid seach so that a single eval_fcn call is required
+        morris_samp[i_samp*(n_poi+1):(i_samp+1)*(n_poi+1),:] = samp_mat
+    return morris_samp
+        
 
 ##--------------------------------------GetSampDist----------------------------------------------------
 def get_samp_dist(model, gsa_options):
