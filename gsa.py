@@ -33,8 +33,8 @@ class GsaOptions:
 
 class GsaResults:
     #
-    def __init__(self,sobol_base=np.empty, sobol_tot=np.empty, f_a=np.empty, f_b=np.empty, f_d=np.empty, f_ab=np.empty, \
-                 samp_d=np.empty,sigma2=np.empty, mu_star=np.empty):
+    def __init__(self,sobol_base=np.empty(), sobol_tot=np.empty(), f_a=np.empty(), f_b=np.empty(), f_d=np.empty(), f_ab=np.empty(), \
+                 samp_d=np.empty(), morris_variance=np.empty(), morris_mean_abs=np.empty(), morris_mean=np.empty()):
         self.sobol_base=sobol_base
         self.sobol_tot=sobol_tot
         self.f_a=f_a
@@ -42,8 +42,9 @@ class GsaResults:
         self.f_d=f_d
         self.f_ab=f_ab
         self.samp_d=samp_d
-        self.mu_star=mu_star
-        self.sigma2=sigma2
+        self.morris_mean_abs=morris_mean_abs
+        self.morris_mean = morris_mean
+        self.morris_variance=morris_variance
     pass
 
 
@@ -77,14 +78,24 @@ def run_gsa(model, gsa_options):
     gsa_results = GsaResults()
     #Morris Screening
     if gsa_options.run_morris:
-        mu_star, sigma2 = calculate_morris(model, gsa_options)
-        gsa_results.mu_star=mu_star
-        gsa_results.sigma2=sigma2
+        #Set non-biased perturbation distance for even l
+        #Source: Smith, R. 2011. Uncertainty Quanitification. p.333
+        pert_distance = gsa_options.l_morris/ (2*(gsa_options.l_morris-1))
+        
+        morris_samp = get_morris_poi_sample(model.dist, gsa_options.n_samp_morris,\
+                                            model.n_poi, pert_distance)
+            
+        morris_mean_abs, morris_mean, morris_variance = calculate_morris(\
+                                             model.eval_fcn, morris_samp, \
+                                             pert_distance)
+        gsa_results.morris_mean_abs=morris_mean_abs
+        gsa_results.morris_mean = morris_mean
+        gsa_results.morris_variance=morris_variance
 
     #Sobol Analysis
     if gsa_options.run_sobol:
         #Make Distribution Samples and Calculate model results
-        [f_a, f_b, f_ab, f_d, samp_d] = get_samples(model, gsa_options)
+        [f_a, f_b, f_ab, f_d, samp_d] = get_sobol_sample(model, gsa_options)
         #Calculate Sobol Indices
         [sobol_base, sobol_tot]=calculate_sobol(f_a, f_b, f_ab, f_d)
         gsa_results.f_d=f_d
@@ -103,7 +114,7 @@ def run_gsa(model, gsa_options):
 ###----------------------------------------------------------------------------------------------
 
 
-def get_samples(model,gsa_options):
+def get_sobol_sample(model,gsa_options):
     """Constructs and evaluates sobol samples using predefined sampling distributions.
         Currently only function for uniform or saltelli normal
     
@@ -218,7 +229,7 @@ def calculate_sobol(f_a, f_b, f_ab, f_d):
     return sobol_base, sobol_tot
 
 ##-------------------------------------GetMorris-------------------------------------------------------
-def calculate_morris(model,gsa_options):
+def calculate_morris(eval_fcn, morris_samp, pert_distance):
     """Calculates morris samples using information from Model and GsaOptions objects.
     
     Parameters
@@ -235,44 +246,33 @@ def calculate_morris(model,gsa_options):
     np.ndarray
         n_qoi x n_poi array of morris sensitivity variance indices
     """
-    #Define delta
-    delta=(gsa_options.l_morris+1)/(2*gsa_options.l_morris)
-    #Get Parameter Samples- use parameter distribution
-    param_samp=model.sample(gsa_options.n_samp_morris)[0]
-    #Calulate derivative indices
-    d= np.empty((gsa_options.n_samp_morris, model.n_poi, model.n_qoi)) #n_qoi x n_poi x nSamples
-    #Define constant sampling matrices
-    J=np.ones((model.n_poi+1,model.n_poi))
-    B = (np.tril(np.ones(J.shape), -1))
-    for i_samp in range(0,gsa_options.n_samp_morris):
-        #Define Random Sampling matrices
-        D=np.diag(np.random.choice(np.array([1,-1]), size=(model.n_poi,)))
-        P=np.identity(model.n_poi)
-        #np.random.shuffle(P)
-        jTheta=param_samp[i_samp,]*J
-        #CalculateMorris Sample matrix
-        Bj=np.matmul(jTheta+delta/2*(np.matmul((2*B-J),D)+J),P)
-        fBj=model.eval_fcn(Bj)
-        for i_poi in np.arange(0,model.n_poi):
-            index_nonzero=np.nonzero(Bj[i_poi+1,:]-Bj[i_poi,:])[0][0]
-            #print(np.nonzero(Bj[i_poi+1,:]-Bj[i_poi,:]))
-            if Bj[i_poi+1,index_nonzero]-Bj[i_poi,index_nonzero]>0:
-                if model.n_qoi==1:
-                    d[i_samp,index_nonzero]=(fBj[i_poi+1]-fBj[i_poi])/delta
-                else:
-                    d[i_samp,index_nonzero,:]=(fBj[i_poi+1]-fBj[i_poi])/delta
-            elif Bj[i_poi+1,index_nonzero]-Bj[i_poi,index_nonzero]<0:
-                if model.n_qoi==1:
-                    d[i_samp,index_nonzero]=(fBj[i_poi]-fBj[i_poi+1])/delta
-                else:
-                    d[i_samp,index_nonzero,:]=(fBj[i_poi,:]-fBj[i_poi+1,:])/delta
-            else:
-                raise(Exception('0 difference identified in Morris'))
-    #Compute Indices- all outputs are n_qoi x n_poi
-    mu_star=np.mean(np.abs(d),axis=0)
-    sigma2=np.var(d, axis=0)
+    #Evaluate Sample
+    f_eval_compact = eval_fcn(morris_samp)
+    
+    #Compute # of pois, qois and samples to ensure consitency
+    n_poi = morris_samp.shape[1]
+    n_samp = morris_samp.shape[0]/(n_poi+1)
+    n_qoi = f_eval_compact.shape[1]
+    
+    #Seperate each parameter search for ease of computation
+    f_eval_seperated = np.empty((n_samp, n_poi+1, n_qoi))
+    for i_samp in range(n_samp):
+        f_eval_seperated[n_samp,:,:] = f_eval_compact[i_samp*(n_poi+1):(i_samp+1)*(n_poi+1),:]
+        
+    deriv_approx = np.empty((n_samp, n_poi, n_qoi))  # n_samp x n_poi x n_qoi
+    
+    #Apply finite difference formula 
+    #Source: Smith, R. 2011, Uncertainty Quanitification. p.333
+    for i_poi in range(n_poi):
+        deriv_approx[:,i_poi,:] = f_eval_seperated[:,i_poi+1,:] - f_eval_seperated[:,i_poi,:]
+        
+    #Apply Morris Index formula
+    #Source: Smith, R. 2011, Uncertainty Quanitification. p.332
+    morris_mean_abs = np.mean(np.abs(deriv_approx),axis = 0) # n_poi x n_qoi
+    morris_mean = np.mean(deriv_approx, axis = 0)
+    morris_variance=np.var(deriv_approx, axis=0) # n_poi x n_qoi
 
-    return mu_star, sigma2
+    return morris_mean_abs, morris_mean, morris_variance
 
 def get_morris_poi_sample(param_dist, n_samp, n_poi, pert_distance, random = True):
     #Use sobol distributions for low discrepancy
