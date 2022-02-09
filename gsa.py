@@ -33,8 +33,8 @@ class GsaOptions:
 
 class GsaResults:
     #
-    def __init__(self,sobol_base=np.empty(), sobol_tot=np.empty(), f_a=np.empty(), f_b=np.empty(), f_d=np.empty(), f_ab=np.empty(), \
-                 samp_d=np.empty(), morris_variance=np.empty(), morris_mean_abs=np.empty(), morris_mean=np.empty()):
+    def __init__(self,sobol_base=np.nan, sobol_tot=np.nan, f_a=np.nan, f_b=np.nan, f_d=np.nan, f_ab=np.nan, \
+                 samp_d=np.nan, morris_variance=np.nan, morris_mean_abs=np.nan, morris_mean=np.nan):
         self.sobol_base=sobol_base
         self.sobol_tot=sobol_tot
         self.f_a=f_a
@@ -227,8 +227,12 @@ def calculate_sobol(f_a, f_b, f_ab, f_d):
 
 
     return sobol_base, sobol_tot
+#==============================================================================
+#----------------------------------Morris Sampling-----------------------------
+#==============================================================================
 
-##-------------------------------------GetMorris-------------------------------------------------------
+
+##--------------------------------calculate_morris-----------------------------
 def calculate_morris(eval_fcn, morris_samp, pert_distance):
     """Calculates morris samples using information from Model and GsaOptions objects.
     
@@ -274,6 +278,8 @@ def calculate_morris(eval_fcn, morris_samp, pert_distance):
 
     return morris_mean_abs, morris_mean, morris_variance
 
+##---------------------------get_morris_poi_sample-----------------------------
+
 def get_morris_poi_sample(param_dist, n_samp, n_poi, pert_distance, random = True):
     #Use sobol distributions for low discrepancy
     #Generate n_samp_morris samples
@@ -283,16 +289,20 @@ def get_morris_poi_sample(param_dist, n_samp, n_poi, pert_distance, random = Tru
     B = (np.tril(np.ones(J.shape), -1))
     morris_samp = np.empty((n_samp*(n_poi+1), n_poi))
     for i_samp in range(n_samp):
-        #Define Random Sampling matrices
-        D=np.diag(np.random.choice(np.array([1,-1]), size=(n_poi,)))
-        P=np.identity(n_poi)
-        np.random.shuffle(P)
         jTheta=random_samp[i_samp,]*J
         #Calculate Morris Sample matrix
         #Source: Smith, R. 2011. Uncertainty Quantification. p.334
         if random == True:  
+            #Define Random Sampling matrices
+            D=np.diag(np.random.choice(np.array([1,-1]), size=(n_poi,)))
+            P=np.identity(n_poi)
+            np.random.shuffle(P)
             samp_mat = np.matmul(jTheta+pert_distance/2*(np.matmul((2*B-J),D)+J),P)
         elif random == False:
+            #Define non-random Sampling matrices
+            D=np.diag(np.random.choice(np.array([1,1]), size=(n_poi,)))
+            P=np.identity(n_poi)
+            np.random.shuffle(P)
             # Only use non-random formulations for testing matrix generation
             samp_mat = jTheta+pert_distance/2*(np.matmul((2*B-J),D)+J)
         #Stack each grid seach so that a single eval_fcn call is required
