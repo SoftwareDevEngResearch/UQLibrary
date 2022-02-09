@@ -8,7 +8,7 @@ Created on Tue Jan 18 14:03:35 2022
 #3rd party Modules
 import numpy as np
 #import sys
-#import warnings
+import warnings
 #import matplotlib.pyplot as plt
 #import scipy.integrate as integrate
 #from tabulate import tabulate                       #Used for printing tables to terminal
@@ -138,15 +138,17 @@ def get_sobol_sample(model,gsa_options):
     """
     n_samp_sobol = gsa_options.n_samp_sobol
     # Make 2 POI sample matrices with n_samp_sobol samples each
-    if model.dist_type.lower()=='uniform' or model.dist_type.lower()=='saltelli normal':
-        (samp_a, samp_b)=model.sample_fcn(n_samp_sobol);                                     #Get both A and B samples so no repeated values
-    else:
-        #-------Error, need to switch these samplings to the join Saltelli-------------
-        samp_a = model.sample_fcn(n_samp_sobol)
-        samp_b = model.sample_fcn(n_samp_sobol)
-    # Calculate matrices of QOI values for each POI sample matrix
-    f_a = model.eval_fcn(samp_a).reshape([n_samp_sobol, model.n_qoi])  # n_samp_sobol x nQOI out matrix from A
-    f_b = model.eval_fcn(samp_b).reshape([n_samp_sobol, model.n_qoi])  # n_samp_sobol x nQOI out matrix from B
+    if np.all(model.dist_type!=np.array(["satelli normal", "satelli uniform"])):
+              warnings.warn("Non-satelli sampling algorithm used for Sobol analysis."\
+                            + " Suggested distribution types are satelli normal "+\
+                                "and satelli uniform.")
+    sample_compact = model.sample_fcn(2*n_samp_sobol)
+    f_compact = model.eval_fcn(sample_compact)
+    # Seperate sample into a and b for algorithm
+    samp_a = sample_compact[:n_samp_sobol]
+    samp_b = sample_compact[n_samp_sobol:]
+    f_a = f_compact[:n_samp_sobol]
+    f_b = f_compact[n_samp_sobol:] # n_samp_sobol x nQOI out matrix from B
     # Stack the output matrices into a single matrix
     f_d = np.concatenate((f_a.copy(), f_b.copy()), axis=0)
 
@@ -164,7 +166,7 @@ def get_sobol_sample(model,gsa_options):
         else:
             f_ab[:, i_param, :] = model.eval_fcn(samp_ab)  # n_samp_sobol x nPOI x nQOI tensor
         del samp_ab
-    return f_a, f_b, f_ab, f_d, np.concatenate((samp_a.copy(), samp_b.copy()), axis=0)
+    return f_a, f_b, f_ab, f_d, sample_compact
 
 def calculate_sobol(f_a, f_b, f_ab, f_d):
     """Calculates 1st order and total sobol indices using Saltelli approximation formula.
@@ -333,7 +335,11 @@ def get_samp_dist(dist_type, dist_param, n_poi, fcn_inverse_cdf = np.nan):
         sample_fcn = lambda n_samp_sobol: saltelli_normal(n_samp_sobol, dist_param)
     elif dist_type == 'uniform':  # uniform distribution
         # doubleParms=np.concatenate(model.dist_param, model.dist_param, axis=1)
-        sample_fcn = lambda n_samp_sobol: saltelli_sample(n_samp_sobol, dist_param)
+        sample_fcn = lambda n_samp_sobol: np.random.rand(n_samp_sobol, n_poi)*\
+            (dist_param[[1], :]-dist_param[[0],:]) + dist_param[[0], :]
+    elif dist_type == 'saltelli uniform':  # uniform distribution
+        # doubleParms=np.concatenate(model.dist_param, model.dist_param, axis=1)
+        sample_fcn = lambda n_samp_sobol: saltelli_uniform(n_samp_sobol, dist_param)
     elif dist_type == 'exponential': # exponential distribution
         sample_fcn = lambda n_samp_sobol: np.random.exponential(dist_param,size=(n_samp_sobol, n_poi))
     elif dist_type == 'beta': # beta distribution
@@ -351,8 +357,8 @@ def get_samp_dist(dist_type, dist_param, n_poi, fcn_inverse_cdf = np.nan):
 
 
 
-def saltelli_sample(n_samp_sobol,dist_param):
-    """Constructs a uniform low discrepency saltelli sample for use in Sobol
+def saltelli_sample(n_samp, n_poi):
+    """Constructs a uniform [0,1] low discrepency saltelli sample for use in Sobol
         index approximation
     
     Parameters
@@ -365,26 +371,32 @@ def saltelli_sample(n_samp_sobol,dist_param):
     Returns
     -------
     np.ndarray
-        POI sample part a
-    np.ndarray
-        POI sample part b
+        Low discrepancy POI sample of uniform distribution on [0,1] constructed 
+        using satelli's alrogrithm
     """
-    n_poi=dist_param.shape[1]
-    #base_sample=sobol.sample(dimension=n_poi*2, n_points=n_samp_sobol, skip=1099)
-    base_sample=sobol_sample(n_samp_sobol,n_poi*2)
-    base_a=base_sample[:,:n_poi]
-    base_b=base_sample[:,n_poi:2*n_poi]
-    samp_a=dist_param[[0],:]+(dist_param[[1],:]-dist_param[[0],:])*base_a
-    samp_b=dist_param[[0],:]+(dist_param[[1],:]-dist_param[[0],:])*base_b
-    return (samp_a, samp_b)
+    
+    #Add .5 to n_samp/2 so that if n_samp is odd, an extra sample is generated
+    base_sample=sobol_sample(int(n_samp/2+.5),n_poi*2)
+    sample = np.empty((n_samp, n_poi))
+    
+    #Seperate and stack half the samples in the 2nd dimension for saltelli's 
+    # algorithm
+    if n_samp%2==0:
+        sample[:n_samp/2,:]=base_sample[:,0:n_poi]
+        sample[n_samp/2:,:]=base_sample[:,n_poi:]
+    else :
+        sample[:n_samp/2,:] = base_sample[:,0:n_poi]
+        sample[n_samp/2:-1,:] = base_sample[:,n_poi:]
+    return sample
 
-def saltelli_normal(n_samp_sobol, dist_param):
-    """Constructs a normal low discrepency saltelli sample for use in Sobol
+
+def saltelli_uniform(n_samp, dist_param):
+    """Constructs a uniform low discrepency saltelli sample for use in Sobol
         index approximation
     
     Parameters
     ----------
-    n_samp_sobol : int
+    n_samp: int
         Number of samples to take
     dist_param : np.ndarray
         2 x n_poi array of mean and variance for each parameter
@@ -392,17 +404,38 @@ def saltelli_normal(n_samp_sobol, dist_param):
     Returns
     -------
     np.ndarray
-        POI sample part a
-    np.ndarray
-        POI sample part b
+        Low discrepancy POI sample of uniform distribution constructed using 
+        satelli's alrogrithm
     """
     n_poi=dist_param.shape[1]
-    #base_sample=sobol.sample(dimension=n_poi*2, n_points=n_samp_sobol, skip=1099)
-    base_sample=sobol_sample(n_samp_sobol,n_poi*2)
-    base_a=base_sample[:,:n_poi]
-    base_b=base_sample[:,n_poi:2*n_poi]
-    transformA=sct.norm.ppf(base_a)
-    transformB=sct.norm.ppf(base_b)
-    samp_a=transformA*np.sqrt(dist_param[[1], :]) + dist_param[[0], :]
-    samp_b=transformB*np.sqrt(dist_param[[1], :]) + dist_param[[0], :]
-    return (samp_a, samp_b)
+    
+    sample_base = saltelli_sample(n_samp,n_poi)
+    
+    sample_transformed = dist_param[[0],:]+(dist_param[[1],:]-dist_param[[0],:])*sample_base
+    return sample_transformed
+
+
+def saltelli_normal(n_samp, dist_param):
+    """Constructs a normal low discrepency saltelli sample for use in Sobol
+        index approximation
+    
+    Parameters
+    ----------
+    n_samp: int
+        Number of samples to take
+    dist_param : np.ndarray
+        2 x n_poi array of mean and variance for each parameter
+        
+    Returns
+    -------
+    np.ndarray
+        Low discrepancy POI sample of normal distribution constructed using 
+        satelli's alrogrithm
+    """
+    
+    n_poi=dist_param.shape[1]
+    
+    sample_base = saltelli_sample(n_samp,n_poi)
+    sample_transform=sct.norm.ppf(sample_base)*np.sqrt(dist_param[[1], :]) \
+        + dist_param[[0], :]
+    return sample_transform

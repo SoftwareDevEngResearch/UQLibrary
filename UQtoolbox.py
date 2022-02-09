@@ -154,7 +154,8 @@ class Model:
             
         #--------------------------------dist_type-----------------------------
         #Only allow distributions that are currently fully implemented
-        valid_distribution =np.array(["uniform", "normal", "saltelli normal"])
+        valid_distribution =np.array(["uniform", "saltelli uniform", "normal", \
+                                      "saltelli normal"])
         # valid_distribution =np.array(["uniform", "normal", "exponential", \
         #                           "saltelli normal", "beta", "InverseCDF"])
         #If distribution type is valid, save its value
@@ -168,10 +169,10 @@ class Model:
         #--------------------------------dist_param----------------------------
         # Apply automatic distribution parameter settings
         if str(dist_param).lower() == 'auto':
-            if self.dist_type.lower()=='uniform':
+            if (self.dist_type == "uniform" or self.dist_type == "saltelli uniform"):
                 self.dist_param=[[.8],[1.2]]*np.ones((2,self.n_poi))*self.base_poi
                 del dist_param
-            elif self.dist_type.lower()=='normal':
+            elif (self.dist_type == "normal" or self.dist_type == "saltelli normal"):
                 if cov.size()==0:
                     self.dist_param=[[1],[.2]]*np.ones((2,self.n_poi))*self.base_poi
                     del dist_param
@@ -180,11 +181,11 @@ class Model:
             #Check dimensions of numpy array are correct
             if dist_param.shape[1] == self.n_poi:
                 # Correct number of parameters for each distribution
-                if self.dist_type == "unif" and dist_param.shape[0]!=2:
+                if (self.dist_type == "uniform" or self.dist_type == "saltelli uniform")\
+                    and dist_param.shape[0]!=2:
                     raise Exception("2 parameters per POI required for uniform")
-                elif self.dist_type == "normal" and dist_param.shape[0]!=2:
-                    raise Exception("2 parameters per POI required for normal")
-                elif self.dist_type == "saltelli normal" and dist_param.shape[0]!=2:
+                elif (self.dist_type == "normal" or self.dist_type == "saltelli normal")\
+                    and dist_param.shape[0]!=2:
                     raise Exception("2 parameters per POI required for normal")
                 # Assign dist_param if conditions met
                 else :
