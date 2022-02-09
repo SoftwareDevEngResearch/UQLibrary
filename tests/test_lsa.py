@@ -11,6 +11,25 @@ import sys
 #Load Load functions to be tested
 sys.path.insert(0, '../')
 from lsa import get_jacobian
+    
+#----------------------------------Support Functions---------------------------
+    
+
+def third_order_uni_poly(x,c):
+    p_x = c[0]+c[1]*x+c[2]*x**2 + c[3]* x**3
+    return  np.array([p_x])
+
+def third_order_uni_poly_deriv(x,c):
+    dpdx = c[1]+2*c[2]*x + 3* c[3]*x**2
+    return dpdx
+
+def third_order_multi_poly(x,c):
+    p_x = np.sum(c[0,:]+c[1,:]*x+c[2,:]*x**2 + c[3,:]* x**3)
+    return  np.array([p_x])
+
+def third_order_multi_poly_grad(x,c):
+    gradf = c[1,:] + 2*c[2,:]*x + 3*c[3,:]*x**2
+    return gradf
 
 #==============================================================================
 #------------------------------------Jacobian Tests----------------------------
@@ -63,22 +82,3 @@ def test_complex_multi_poly():
     assert np.allclose(grad_approx,grad)
     
 #--------------------------------Boundary Point Tests--------------------------
-    
-#----------------------------------Support Functions---------------------------
-    
-
-def third_order_uni_poly(x,c):
-    p_x = c[0]+c[1]*x+c[2]*x**2 + c[3]* x**3
-    return  np.array([p_x])
-
-def third_order_uni_poly_deriv(x,c):
-    dpdx = c[1]+2*c[2]*x + 3* c[3]*x**2
-    return dpdx
-
-def third_order_multi_poly(x,c):
-    p_x = np.sum(c[0,:]+c[1,:]*x+c[2,:]*x**2 + c[3,:]* x**3)
-    return  np.array([p_x])
-
-def third_order_multi_poly_grad(x,c):
-    gradf = c[1,:] + 2*c[2,:]*x + 3*c[3,:]*x**2
-    return gradf

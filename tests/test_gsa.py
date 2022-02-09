@@ -14,6 +14,7 @@ import sys
 sys.path.insert(0, '../')
 from gsa import get_morris_poi_sample
 
+#Check to confirm only a single value is perturbed for each 
 def test_morris_sampling_delta():
     #Only let the base sample be 0 in 3D
     n_poi = 3
@@ -31,6 +32,7 @@ def test_morris_sampling_delta():
     sample_dif_sum_abs = np.sum(np.abs(sample_dif), axis = 1)
     assert np.allclose(sample_dif_sum_abs, (1/3*np.ones(sample_dif_sum_abs.shape)))
 
+#Check to confirm the morris sample has no repeated values
 def test_morris_sampling_repeats():
     #Only let the base sample be 0 in 3D
     n_poi = 3
@@ -45,16 +47,16 @@ def test_morris_sampling_repeats():
     
         
     print(sample)
-    sample_diff = np.ones((n_poi+1, n_poi+1), dtype=bool)
+    #Make all combinations False to ensure every value is checked
+    sample_diff = np.zeros((n_poi+1, n_poi+1), dtype=bool)
     for i_samp1 in range(n_poi+1):
         for i_samp2 in range(n_poi+1):
+            #Fix same samples to be true since they should be equal
             if i_samp1==i_samp2:
                 sample_diff[i_samp1, i_samp2] = True
+            #Check every different sample is actually different
             elif np.any(sample[i_samp1,:]!=sample[i_samp2,:]):
                 sample_diff[i_samp1,i_samp2] = True
-            else :
-                sample_diff[i_samp1,i_samp2] = False
-            
             
             
     assert np.all(sample_diff)
