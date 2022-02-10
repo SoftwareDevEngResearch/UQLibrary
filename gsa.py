@@ -13,7 +13,7 @@ import warnings
 #import scipy.integrate as integrate
 #from tabulate import tabulate                       #Used for printing tables to terminal
 #import sobol                                        #Used for generating sobol sequences
-from SALib.sample.sobol_sequence import sample as sobol_sample
+from scipy.stats import qmc
 import scipy.stats as sct
 
 class GsaOptions:
@@ -294,7 +294,11 @@ def get_morris_poi_sample(param_dist, n_samp, n_poi, pert_distance, random = Tru
         #Source: Smith, R. 2011. Uncertainty Quantification. p.334
         if random == True:  
             #Define Random Sampling matrices
-            D=np.diag(np.random.choice(np.array([1,-1]), size=(n_poi,)))
+            #D=np.diag(np.random.choice(np.array([1,-1]), size=(n_poi,)))
+            #NOTE: using non-random step direction to keep denominator in deriv approx
+            #   equal to delta rather than -delta for some samples. Random form is
+            #   kept above in comments 
+            D=np.diag(np.random.choice(np.array([1,1]), size=(n_poi,)))
             P=np.identity(n_poi)
             np.random.shuffle(P)
             samp_mat = np.matmul(jTheta+pert_distance/2*(np.matmul((2*B-J),D)+J),P)
@@ -376,17 +380,25 @@ def saltelli_sample(n_samp, n_poi):
     """
     
     #Add .5 to n_samp/2 so that if n_samp is odd, an extra sample is generated
-    base_sample=sobol_sample(int(n_samp/2+.5),n_poi*2)
+    sampler = qmc.Sobol(d= n_poi*2, scramble = True)
+    #Use the smallest log2 sample size at least as large as n_samp to keep
+    #   quadrature balance 
+    #   (see https://scipy.github.io/devdocs/reference/generated/scipy.stats.qmc.Sobol.html )
+    base_sample = sampler.random_base2(m=int(np.ceil(np.log2(n_samp/2))))
+    
+    #Add .5 to n_samp/2 so that if n_samp is odd, an extra sample is generated
+    base_sample=base_sample[:int(n_samp/2+.5),:]
+    
     sample = np.empty((n_samp, n_poi))
     
     #Seperate and stack half the samples in the 2nd dimension for saltelli's 
     # algorithm
     if n_samp%2==0:
-        sample[:n_samp/2,:]=base_sample[:,0:n_poi]
-        sample[n_samp/2:,:]=base_sample[:,n_poi:]
+        sample[:int((n_samp)/2),:]=base_sample[:,0:n_poi]
+        sample[int((n_samp)/2):,:]=base_sample[:,n_poi:]
     else :
-        sample[:n_samp/2,:] = base_sample[:,0:n_poi]
-        sample[n_samp/2:-1,:] = base_sample[:,n_poi:]
+        sample[:int((n_samp+.5)/2),:] = base_sample[:,0:n_poi]
+        sample[int((n_samp+.5)/2):-1,:] = base_sample[:,n_poi:]
     return sample
 
 
