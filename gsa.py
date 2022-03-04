@@ -34,7 +34,7 @@ class GsaOptions:
 class GsaResults:
     #
     def __init__(self,sobol_base=np.nan, sobol_tot=np.nan, f_a=np.nan, f_b=np.nan, f_d=np.nan, f_ab=np.nan, \
-                 samp_d=np.nan, morris_variance=np.nan, morris_mean_abs=np.nan, morris_mean=np.nan):
+                 samp_d=np.nan, morris_std=np.nan, morris_mean_abs=np.nan, morris_mean=np.nan):
         self.sobol_base=sobol_base
         self.sobol_tot=sobol_tot
         self.f_a=f_a
@@ -44,7 +44,7 @@ class GsaResults:
         self.samp_d=samp_d
         self.morris_mean_abs=morris_mean_abs
         self.morris_mean = morris_mean
-        self.morris_variance=morris_variance
+        self.morris_std=morris_std
     pass
 
 
@@ -83,12 +83,12 @@ def run_gsa(model, gsa_options):
         morris_samp = get_morris_poi_sample(model.sample_fcn, gsa_options.n_samp_morris,\
                                             model.n_poi, pert_distance)
             
-        morris_mean_abs, morris_mean, morris_variance = calculate_morris(\
+        morris_mean_abs, morris_mean, morris_std = calculate_morris(\
                                              model.eval_fcn, morris_samp, \
                                              pert_distance)
         gsa_results.morris_mean_abs=morris_mean_abs
         gsa_results.morris_mean = morris_mean
-        gsa_results.morris_variance=morris_variance
+        gsa_results.morris_std=morris_std
 
     #Sobol Analysis
     if gsa_options.run_sobol:
@@ -233,7 +233,7 @@ def calculate_sobol(f_a, f_b, f_ab, f_d):
 
 
 ##--------------------------------calculate_morris-----------------------------
-def calculate_morris(eval_fcn, morris_samp, pert_distance):
+def calculate_morris(eval_fcn, morris_samp, pert_distance, verbose = False):
     """Calculates morris samples using information from Model and GsaOptions objects.
     
     Parameters
@@ -252,42 +252,100 @@ def calculate_morris(eval_fcn, morris_samp, pert_distance):
     """
     #Evaluate Sample
     f_eval_compact = eval_fcn(morris_samp)
+    if verbose:
+        print(f_eval_compact)
     
     #Compute # of pois, qois and samples to ensure consitency
-    n_poi = morris_samp.shape[1]
-    n_samp = morris_samp.shape[0]/(n_poi+1)
-    n_qoi = f_eval_compact.shape[1]
-    
-    #Seperate each parameter search for ease of computation
-    f_eval_seperated = np.empty((n_samp, n_poi+1, n_qoi))
-    for i_samp in range(n_samp):
-        f_eval_seperated[n_samp,:,:] = f_eval_compact[i_samp*(n_poi+1):(i_samp+1)*(n_poi+1),:]
+    if morris_samp.ndim == 1:
+        n_poi = 1
+    elif morris_samp.ndim == 2:
+        n_poi = morris_samp.shape[1]
+    else:
+        raise Exception("More than 2 dimensions in morris_samp")
+    #Convert to int so it can be used in indexing
+    n_samp = int(morris_samp.shape[0]/(n_poi+1))
+    if f_eval_compact.ndim == 2:
+        n_qoi = f_eval_compact.shape[1]
+    elif f_eval_compact.ndim ==1:
+        n_qoi =1
+    else:
+        raise Exception("More than 2 dimensions in f_eval")
         
-    deriv_approx = np.empty((n_samp, n_poi, n_qoi))  # n_samp x n_poi x n_qoi
+    #Uncompact Samples
+    f_eval_seperated = morris_seperate(f_eval_compact, n_samp, n_poi, n_qoi)
+    morris_samp_seperated = morris_seperate(morris_samp, n_samp, n_poi, n_poi)
+    if verbose:
+        print("morris samp seperated: " + str(morris_samp_seperated))
+    
+    #Get which sample perturbs which poi
+    poi_pert_location = get_poi_pert_location(morris_samp_seperated)
+    if verbose:
+        print("poi_pert_location: " + str(poi_pert_location))
+        
+        
+    #initialize data storage arrays with 1 dimension lower if n_qoi =1
+    if n_qoi > 1:
+        deriv_approx = np.empty((n_samp, n_poi, n_qoi))  # n_samp x n_poi x n_qoi
+    else: 
+        deriv_approx = np.empty((n_samp, n_poi))  # n_samp x n_poi
+    if verbose:
+        print("QOIs : " + str(f_eval_seperated))
     
     #Apply finite difference formula 
     #Source: Smith, R. 2011, Uncertainty Quanitification. p.333
-    for i_poi in range(n_poi):
-        deriv_approx[:,i_poi,:] = f_eval_seperated[:,i_poi+1,:] - f_eval_seperated[:,i_poi,:]
+    for i_samp in range(n_samp):
+        for i_pert in range(n_poi): 
+            i_poi = poi_pert_location[i_samp, i_pert]
+            deriv_approx[i_samp,i_poi] = (f_eval_seperated[i_samp,i_pert+1] - \
+                                          f_eval_seperated[i_samp,i_pert])/ pert_distance
+    # for i_poi in range(n_poi):
+    #     deriv_approx[:,i_poi] = f_eval_seperated[:,i_poi+1] - f_eval_seperated[:,i_poi]
+    if verbose:
+        print("deriv approx: " + str(deriv_approx))
         
     #Apply Morris Index formula
     #Source: Smith, R. 2011, Uncertainty Quanitification. p.332
     morris_mean_abs = np.mean(np.abs(deriv_approx),axis = 0) # n_poi x n_qoi
     morris_mean = np.mean(deriv_approx, axis = 0)
-    morris_variance=np.var(deriv_approx, axis=0) # n_poi x n_qoi
+    morris_std=np.sqrt(np.var(deriv_approx, axis=0)) # n_poi x n_qoi
+    
+    if verbose:
+        print("morris mean abs: " + str(morris_mean_abs))
+        print("morris mean abs: " + str(morris_mean))
+        print("morris st: " + str(morris_std))
 
-    return morris_mean_abs, morris_mean, morris_variance
+    return morris_mean_abs, morris_mean, morris_std
 
+def morris_seperate(qoi_compact, n_samp, n_poi, n_qoi):
+    if n_qoi > 1:
+        qoi_seperated = np.empty((n_samp, n_poi+1, n_qoi))
+    else: 
+        qoi_seperated = np.empty((n_samp, n_poi+1))
+    #Seperate each parameter search for ease of computation
+    for i_samp in range(n_samp):
+        qoi_seperated[i_samp] = qoi_compact[i_samp*(n_poi+1):(i_samp+1)*(n_poi+1)]
+        
+    return qoi_seperated
+
+def get_poi_pert_location(morris_samp_seperate):
+    n_samp = morris_samp_seperate.shape[0]
+    n_poi = morris_samp_seperate.shape[2]
+    poi_pert_location = np.empty((n_samp, n_poi))
+    for i_samp in range(n_samp):
+        for i_poi in range(n_poi):
+            poi_pert_location[i_samp,i_poi] = np.argmax(np.abs(morris_samp_seperate[i_samp,i_poi+1] \
+                                          - morris_samp_seperate[i_samp,i_poi]))
+    return poi_pert_location.astype(int)
 ##---------------------------get_morris_poi_sample-----------------------------
 
-def get_morris_poi_sample(param_dist, n_samp, n_poi, pert_distance, random = True):
+def get_morris_poi_sample(param_dist, n_samp, n_poi, pert_distance, random = False):
     #Use sobol distributions for low discrepancy
     #Generate n_samp_morris samples
     random_samp =  param_dist(n_samp)
     #Define Sampling matrices that are constant
     J=np.ones((n_poi+1,n_poi))
     B = (np.tril(np.ones(J.shape), -1))
-    morris_samp = np.empty((n_samp*(n_poi+1), n_poi))
+    morris_samp_compact = np.empty((n_samp*(n_poi+1), n_poi))
     for i_samp in range(n_samp):
         jTheta=random_samp[i_samp,]*J
         #Calculate Morris Sample matrix
@@ -310,8 +368,8 @@ def get_morris_poi_sample(param_dist, n_samp, n_poi, pert_distance, random = Tru
             # Only use non-random formulations for testing matrix generation
             samp_mat = jTheta+pert_distance/2*(np.matmul((2*B-J),D)+J)
         #Stack each grid seach so that a single eval_fcn call is required
-        morris_samp[i_samp*(n_poi+1):(i_samp+1)*(n_poi+1),:] = samp_mat
-    return morris_samp
+        morris_samp_compact[i_samp*(n_poi+1):(i_samp+1)*(n_poi+1),:] = samp_mat
+    return morris_samp_compact
         
 
 ##--------------------------------------GetSampDist----------------------------------------------------

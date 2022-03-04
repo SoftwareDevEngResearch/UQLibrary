@@ -28,7 +28,7 @@ def test_linear_jac_finite():
     options.lsa.method = "finite"
     options.display = False
     
-    model.base_poi = np.array([.5, .5])#np.random.uniform(size=2)
+    model.base_poi = np.array([.5, .5])  #np.random.uniform(size=2)
     
     results = uq.run_uq(model, options)
     
@@ -98,5 +98,17 @@ def test_heat_ident_subset_complex():
 #     assert np.all(true_subset==results.lsa.active_set)
 
 #==============================================================================
-#-------------------------------GSA integrated tests---------------------------
+#----------------------------Morris integrated tests---------------------------
 #==============================================================================
+
+def test_linear_portfolio():
+    (model, options) = UQtoolbox_examples.GetExample("portfolio (normal)")
+    options.gsa.run = True
+    options.lsa.run = False
+    options.gsa.run_sobol = False
+    options.gsa.run_morris = True
+    options.gsa.l_morris = 1/40
+    options.gsa.n_samp_morris = 100
+    
+    results = uq.run_uq(model, options)
+    assert np.allclose(results.gsa.morris_mean_abs, np.array([2, 1]))

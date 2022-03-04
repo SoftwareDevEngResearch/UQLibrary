@@ -59,8 +59,8 @@ class Options:
 class Model:
     #Model sets should be initialized with base parameter settings, covariance Matrix, and eval function that
     #   takes in a vector of POIs and outputs a vector of QOIs
-    def __init__(self,base_poi=np.empty(0), name_poi = np.empty(0), \
-                 name_qoi= np. empty(0), cov=np.empty(0), \
+    def __init__(self,base_poi=np.empty(0), name_poi = "auto", \
+                 name_qoi= "auto", cov=np.empty(0), \
                  eval_fcn=np.empty(0), dist_type='uniform', dist_param="auto"):
         #------------------------base_poi, n_poi, name_poi---------------------
         #Assign base_poi and n_poi
@@ -77,34 +77,33 @@ class Model:
         self.n_poi=self.base_poi.size
         
         #Assign name_poi----------------UNFINISHED VALUE CHECKING
+        
+        POInumbers=np.arange(0,self.n_poi)
+        name_poi_auto=np.char.add('POI',POInumbers.astype('U'))
         #Check name_poi is string
         if type(name_poi)==np.ndarray:
             #Check data type
             if name_poi.size!= self.n_poi:
                 raise Exception("Incorrect number of entries in name_poi")
-            self.name_poi=name_poi
         elif type(name_poi)==list:
             #Check data type
             if len(name_poi)!= self.n_poi:
                 raise Exception("Incorrect number of entries in name_poi")
-            self.name_poi=np.array(name_poi)
+            name_poi=np.array(name_poi)
         elif type(name_poi)==str and name_poi.lower()!="auto":
             if self.n_poi!=1:
                 raise Exception("Only one qoi name entered for >1 pois")
-            else :
-                self.name_qoi = name_qoi
         else :
-            POInumbers=np.arange(0,self.n_poi)
-            name_poi=np.char.add('POI',POInumbers.astype('U'))
             if name_poi.lower()!= "auto":
                 warnings.warn("Unrecognized name_poi entry, using automatic values")
+            name_poi = name_poi_auto
         if (name_poi.size != self.n_poi) & (name_poi.size !=0):   #Check that correct size if given
             warnings.warn("name_poi entered but the number of names does not match the number of POIs. Ignoring names.")
             name_poi=np.empty(0)
-        if name_poi.size==0:                                           #If not given or incorrect size, number POIs
-            POInumbers=np.arange(0,self.n_poi)
-            name_poi=np.char.add('POI',POInumbers.astype('U'))
-            
+        if name_poi.size==0:                       
+            name_poi = name_poi_auto
+        self.name_poi = name_poi
+        del name_poi
         #-----------------eval_fcn, base_qoi, n_qoi, name_qoi------------------
         #Assign evaluation function and compute base_qoi
         self.eval_fcn=eval_fcn
@@ -115,34 +114,33 @@ class Model:
         self.n_qoi=len(self.base_qoi)
         
         #Assign name_qoi----------------UNFINISHED VALUE CHECKING
+        #Formulate automatic names so they can be referenced in each case
+        QOInumbers=np.arange(0,self.n_qoi)
+        name_qoi_auto=np.char.add('POI',QOInumbers.astype('U'))
         #Check name_qoi is string
         if type(name_qoi)==np.ndarray:
             #Check data type
             if name_qoi.size!= self.n_qoi:
                 raise Exception("Incorrect number of entries in name_qoi")
-            self.name_qoi = name_qoi
         elif type(name_qoi)==list:
             #Check data type
             if len(name_qoi)!= self.n_qoi:
                 raise Exception("Incorrect number of entries in name_qoi")
-            self.name_qoi=np.array(name_qoi)
+            name_qoi=np.array(name_qoi)
         elif type(name_qoi)==str and name_qoi.lower()!="auto":
             if self.n_qoi!=1:
                 raise Exception("Only one qoi name entered for >1 qois")
-            else: 
-                self.name_qoi = name_qoi
         else :
-            QOInumbers=np.arange(0,self.n_qoi)
-            name_qoi=np.char.add('POI',QOInumbers.astype('U'))
-            if name_poi.lower()!= "auto":
+            if name_qoi.lower()!= "auto":
                 warnings.warn("Unrecognized name_qoi entry, using automatic values")
-        self.name_qoi = name_qoi
-        if (self.name_qoi.size !=self.n_qoi) & (self.name_qoi.size !=0):    #Check names if given match number of QOIs
+            name_qoi= name_qoi_auto
+        if (name_qoi.size !=self.n_qoi) & (name_qoi.size !=0):    #Check names if given match number of QOIs
             warnings.warn("name_qoi entered but the number of names does not match the number of QOIs. Ignoring names.")
-            self.name_qoi = np.empty(0)
-        if self.name_qoi.size==0:                                 #If not given or incorrect size, number QOIs
-            QOInumbers = np.arange(0, self.n_qoi)
-            self.name_qoi = np.char.add('QOI', QOInumbers.astype('U'))
+            name_qoi = name_qoi_auto
+        if name_qoi.size==0:                                 #If not given or incorrect size, number QOIs
+            name_qoi = name_qoi_auto
+        self.name_qoi = name_qoi
+        del name_qoi
             
             
             
@@ -326,15 +324,15 @@ def print_results(results,model,options):
         if options.gsa.run_morris:
             if model.n_qoi==1:
                 print('\n Morris Screening Results for' + model.name_qoi[0])
-                print(tabulate(np.concatenate((model.name_poi.reshape(model.n_poi, 1), results.gsa.mu_star.reshape(model.n_poi, 1), \
-                                               results.gsa.sigma2.reshape(model.n_poi, 1)), 1),
-                    headers=["", "mu_star", "sigma2"]))
+                print(tabulate(np.concatenate((model.name_poi.reshape(model.n_poi, 1), results.gsa.morris_mean_abs.reshape(model.n_poi, 1), \
+                                               results.gsa.morris_std.reshape(model.n_poi, 1)), 1),
+                    headers=["", "mu_star", "sigma"]))
             else:
                 print('\n Morris Screening Results for' + model.name_qoi[iQOI])
                 print(tabulate(np.concatenate(
-                    (model.name_poi.reshape(model.n_poi, 1), results.gsa.mu_star[[iQOI], :].reshape(model.n_poi, 1), \
-                     results.gsa.sigma2[[iQOI], :].reshape(model.n_poi, 1)), 1),
-                    headers=["", "mu_star", "sigma2"]))
+                    (model.name_poi.reshape(model.n_poi, 1), results.gsa.morris_mean_abs[[iQOI], :].reshape(model.n_poi, 1), \
+                     results.gsa.morris_std[[iQOI], :].reshape(model.n_poi, 1)), 1),
+                    headers=["", "mu_star", "sigma"]))
 
 ###----------------------------------------------------------------------------------------------
 ###-------------------------------------Support Functions----------------------------------------
