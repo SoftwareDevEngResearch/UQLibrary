@@ -59,86 +59,156 @@ class Options:
 class Model:
     #Model sets should be initialized with base parameter settings, covariance Matrix, and eval function that
     #   takes in a vector of POIs and outputs a vector of QOIs
-    def __init__(self,base_poi=np.empty(0), name_poi = np.empty(0), \
-                 name_qoi= np. empty(0), cov=np.empty(0), \
-                 eval_fcn=np.empty(0), dist='unif', dist_param="auto"):
-        self.base_poi=base_poi
-        if not isinstance(self.base_poi,np.ndarray):                    #Confirm that base_poi is a numpy array
-            warnings.warn("model.base_poi is not a numpy array")
-        if np.ndim(self.base_poi)>1:                                    #Check to see if base_poi is a vector
-            self.base_poi=np.squeeze(self.base_poi)                     #Make a vector if an array with 1 dim greater than 1
-            if np.ndim(self.base_poi)!=1:                               #Issue an error if base_poi is a matrix or tensor
+    def __init__(self,base_poi=np.empty(0), name_poi = "auto", \
+                 name_qoi= "auto", cov=np.empty(0), \
+                 eval_fcn=np.empty(0), dist_type='uniform', dist_param="auto"):
+        #------------------------base_poi, n_poi, name_poi---------------------
+        #Assign base_poi and n_poi
+        if not isinstance(base_poi,np.ndarray):                    #Confirm that base_poi is a numpy array
+            raise Exception("model.base_poi is not a numpy array")
+        if np.ndim(base_poi)>1:                                    #Check to see if base_poi is a vector
+            base_poi=np.squeeze(base_poi)                     #Make a vector if an array with 1 dim greater than 1
+            if np.ndim(base_poi)!=1:                               #Issue an error if base_poi is a matrix or tensor
                 raise Exception("Error! More than one dimension of size 1 detected for model.base_poi, model.base_poi must be dimension 1")
             else:                                                       #Issue a warning if dimensions were squeezed out of base POIs
                 warnings.warn("model.base_poi was reduced a dimension 1 array. No entries were deleted.")
+        self.base_poi=base_poi
+        del base_poi
         self.n_poi=self.base_poi.size
-        #Assign name_poi
-        self.name_poi = name_poi                                            #Assign name_poi called
-        if (self.name_poi.size != self.n_poi) & (self.name_poi.size !=0):   #Check that correct size if given
+        
+        #Assign name_poi----------------UNFINISHED VALUE CHECKING
+        
+        POInumbers=np.arange(0,self.n_poi)
+        name_poi_auto=np.char.add('POI',POInumbers.astype('U'))
+        #Check name_poi is string
+        if type(name_poi)==np.ndarray:
+            #Check data type
+            if name_poi.size!= self.n_poi:
+                raise Exception("Incorrect number of entries in name_poi")
+        elif type(name_poi)==list:
+            #Check data type
+            if len(name_poi)!= self.n_poi:
+                raise Exception("Incorrect number of entries in name_poi")
+            name_poi=np.array(name_poi)
+        elif type(name_poi)==str and name_poi.lower()!="auto":
+            if self.n_poi!=1:
+                raise Exception("Only one qoi name entered for >1 pois")
+        else :
+            if name_poi.lower()!= "auto":
+                warnings.warn("Unrecognized name_poi entry, using automatic values")
+            name_poi = name_poi_auto
+        if (name_poi.size != self.n_poi) & (name_poi.size !=0):   #Check that correct size if given
             warnings.warn("name_poi entered but the number of names does not match the number of POIs. Ignoring names.")
-            self.name_poi=np.empty(0)
-        if self.name_poi.size==0:                                           #If not given or incorrect size, number POIs
-            POInumbers=np.arange(0,self.n_poi)
-            self.name_poi=np.char.add('POI',POInumbers.astype('U'))
+            name_poi=np.empty(0)
+        if name_poi.size==0:                       
+            name_poi = name_poi_auto
+        self.name_poi = name_poi
+        del name_poi
+        #-----------------eval_fcn, base_qoi, n_qoi, name_qoi------------------
         #Assign evaluation function and compute base_qoi
         self.eval_fcn=eval_fcn
-        self.base_qoi=eval_fcn(base_poi)
+        del eval_fcn
+        self.base_qoi=self.eval_fcn(self.base_poi)
         if not isinstance(self.base_qoi,np.ndarray):                    #Confirm that base_qoi is a numpy array
             warnings.warn("model.base_qoi is not a numpy array")
-        print(self.base_qoi)
         self.n_qoi=len(self.base_qoi)
-        #Assign QOI names
-        self.name_qoi = name_qoi
-        if (self.name_qoi.size !=self.n_qoi) & (self.name_qoi.size !=0):    #Check names if given match number of QOIs
+        
+        #Assign name_qoi----------------UNFINISHED VALUE CHECKING
+        #Formulate automatic names so they can be referenced in each case
+        QOInumbers=np.arange(0,self.n_qoi)
+        name_qoi_auto=np.char.add('POI',QOInumbers.astype('U'))
+        #Check name_qoi is string
+        if type(name_qoi)==np.ndarray:
+            #Check data type
+            if name_qoi.size!= self.n_qoi:
+                raise Exception("Incorrect number of entries in name_qoi")
+        elif type(name_qoi)==list:
+            #Check data type
+            if len(name_qoi)!= self.n_qoi:
+                raise Exception("Incorrect number of entries in name_qoi")
+            name_qoi=np.array(name_qoi)
+        elif type(name_qoi)==str and name_qoi.lower()!="auto":
+            if self.n_qoi!=1:
+                raise Exception("Only one qoi name entered for >1 qois")
+        else :
+            if name_qoi.lower()!= "auto":
+                warnings.warn("Unrecognized name_qoi entry, using automatic values")
+            name_qoi= name_qoi_auto
+        if (name_qoi.size !=self.n_qoi) & (name_qoi.size !=0):    #Check names if given match number of QOIs
             warnings.warn("name_qoi entered but the number of names does not match the number of QOIs. Ignoring names.")
-            self.name_qoi = np.empty(0)
-        if self.name_qoi.size==0:                                 #If not given or incorrect size, number QOIs
-            QOInumbers = np.arange(0, self.n_qoi)
-            self.name_qoi = np.char.add('QOI', QOInumbers.astype('U'))
-        #Assign covariance matrix
+            name_qoi = name_qoi_auto
+        if name_qoi.size==0:                                 #If not given or incorrect size, number QOIs
+            name_qoi = name_qoi_auto
+        self.name_qoi = name_qoi
+        del name_qoi
+            
+            
+            
+            
+        #------------------------------covariance matrix-----------------------
         self.cov=cov
         if self.cov.size!=0 and np.shape(self.cov)!=(self.n_poi,self.n_poi): #Check correct sizing
             raise Exception("Error! model.cov is not an nPOI x nPOI array")
-        
-        #Assign distributions
-        self.dist = dist   
-        
-        #Parse through possible options for dist_param: 
-        # 1) False (use base settings)
-        # 2) numpy array (check dimensions align with n_pois and dist requirements)
-        # Otherwise raise exception
+            
+        #--------------------------------dist_type-----------------------------
+        #Only allow distributions that are currently fully implemented
+        valid_distribution =np.array(["uniform", "saltelli uniform", "normal", \
+                                      "saltelli normal"])
+        # valid_distribution =np.array(["uniform", "normal", "exponential", \
+        #                           "saltelli normal", "beta", "InverseCDF"])
+        #If distribution type is valid, save its value
+        if np.all(dist_type!= valid_distribution):
+            raise Exception(str(dist_type) + " is an invalid distribution. Valid" +\
+                            " distributions are" + str(valid_distribution))
+        else:
+            self.dist_type=dist_type
+            del dist_type
+                
+        #--------------------------------dist_param----------------------------
+        # Apply automatic distribution parameter settings
         if str(dist_param).lower() == 'auto':
-            if self.dist.lower()=='uniform':
+            if (self.dist_type == "uniform" or self.dist_type == "saltelli uniform"):
                 self.dist_param=[[.8],[1.2]]*np.ones((2,self.n_poi))*self.base_poi
-            elif self.dist.lower()=='normal':
+                del dist_param
+            elif (self.dist_type == "normal" or self.dist_type == "saltelli normal"):
                 if cov.size()==0:
                     self.dist_param=[[1],[.2]]*np.ones((2,self.n_poi))*self.base_poi
-                else:
-                    self.dist_param=[self.base_poi, np.diag(self.cov,k=0)]
-            elif dist_param.lower() == 'null':
-                self.dist_param = dist_param
-            else:
-                raise Exception("Unrecognized entry for dist_param: " + str(dist_param))
+                    del dist_param
+        # Apply manual distribution settings
         elif type(dist_param) == np.ndarray:
             #Check dimensions of numpy array are correct
             if dist_param.shape[1] == self.n_poi:
                 # Correct number of parameters for each distribution
-                if dist == "unif" and dist_param.shape[0]!=2:
+                if (self.dist_type == "uniform" or self.dist_type == "saltelli uniform")\
+                    and dist_param.shape[0]!=2:
                     raise Exception("2 parameters per POI required for uniform")
-                elif dist == "normal" and dist_param.shape[0]!=2:
+                elif (self.dist_type == "normal" or self.dist_type == "saltelli normal")\
+                    and dist_param.shape[0]!=2:
                     raise Exception("2 parameters per POI required for normal")
+                # Assign dist_param if conditions met
                 else :
                     self.dist_param=dist_param
+                    del dist_param
             else:
                 raise Exception("Incorrect shape of dist_param. Given shape: "\
-                                + dist_param.shape + ", desired shape: ... x n_poi")     
+                                + dist_param.shape + ", desired shape: ... x n_poi") 
+        elif dist_param.lower() == "cov":
+            if np.any(self.dist_type.lower()==["normal", "saltelli normal"]):
+                self.dist_param=[self.base_poi, np.diag(self.cov,k=0)]   
+                del dist_param 
+            else :
+                raise Exception("Covariance based sampling only implemented for"\
+                                +"normal or saltelli normal distributions")
         else:
-            raise Exception("Incorrect data-type for dist_param, use ndarray or 'auto'")
-    # Hidden parameters - parameters that are not set in calling and should not be adjusted
+            raise Exception("Incorrect data-type for dist_param, use ndarray, 'auto', or 'cov'")
+            
+        #Construct Distribution function
+        self.sample_fcn = gsa.get_samp_dist(self.dist_type, self.dist_param, self.n_poi)
+    
     pass
     def copy(self):
         return Model(base_poi=self.base_poi, name_poi = self.name_poi, name_qoi= self.name_qoi, cov=self.cov, \
-                 eval_fcn=self.eval_fcn, dist=self.dist,dist_param=self.dist_param)
+                 eval_fcn=self.eval_fcn, dist_type=self.dist_type,dist_param=self.dist_param)
 
 ##------------------------------------results-----------------------------------------------------
 # Define class "results" which holds a gsaResults object and lsaResults object
@@ -254,15 +324,15 @@ def print_results(results,model,options):
         if options.gsa.run_morris:
             if model.n_qoi==1:
                 print('\n Morris Screening Results for' + model.name_qoi[0])
-                print(tabulate(np.concatenate((model.name_poi.reshape(model.n_poi, 1), results.gsa.mu_star.reshape(model.n_poi, 1), \
-                                               results.gsa.sigma2.reshape(model.n_poi, 1)), 1),
-                    headers=["", "mu_star", "sigma2"]))
+                print(tabulate(np.concatenate((model.name_poi.reshape(model.n_poi, 1), results.gsa.morris_mean_abs.reshape(model.n_poi, 1), \
+                                               results.gsa.morris_std.reshape(model.n_poi, 1)), 1),
+                    headers=["", "mu_star", "sigma"]))
             else:
                 print('\n Morris Screening Results for' + model.name_qoi[iQOI])
                 print(tabulate(np.concatenate(
-                    (model.name_poi.reshape(model.n_poi, 1), results.gsa.mu_star[[iQOI], :].reshape(model.n_poi, 1), \
-                     results.gsa.sigma2[[iQOI], :].reshape(model.n_poi, 1)), 1),
-                    headers=["", "mu_star", "sigma2"]))
+                    (model.name_poi.reshape(model.n_poi, 1), results.gsa.morris_mean_abs[[iQOI], :].reshape(model.n_poi, 1), \
+                     results.gsa.morris_std[[iQOI], :].reshape(model.n_poi, 1)), 1),
+                    headers=["", "mu_star", "sigma"]))
 
 ###----------------------------------------------------------------------------------------------
 ###-------------------------------------Support Functions----------------------------------------

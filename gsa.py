@@ -8,12 +8,12 @@ Created on Tue Jan 18 14:03:35 2022
 #3rd party Modules
 import numpy as np
 #import sys
-#import warnings
+import warnings
 #import matplotlib.pyplot as plt
 #import scipy.integrate as integrate
 #from tabulate import tabulate                       #Used for printing tables to terminal
 #import sobol                                        #Used for generating sobol sequences
-from SALib.sample.sobol_sequence import sample as sobol_sample
+from scipy.stats import qmc
 import scipy.stats as sct
 
 class GsaOptions:
@@ -33,8 +33,8 @@ class GsaOptions:
 
 class GsaResults:
     #
-    def __init__(self,sobol_base=np.empty, sobol_tot=np.empty, f_a=np.empty, f_b=np.empty, f_d=np.empty, f_ab=np.empty, \
-                 samp_d=np.empty,sigma2=np.empty, mu_star=np.empty):
+    def __init__(self,sobol_base=np.nan, sobol_tot=np.nan, f_a=np.nan, f_b=np.nan, f_d=np.nan, f_ab=np.nan, \
+                 samp_d=np.nan, morris_std=np.nan, morris_mean_abs=np.nan, morris_mean=np.nan):
         self.sobol_base=sobol_base
         self.sobol_tot=sobol_tot
         self.f_a=f_a
@@ -42,8 +42,9 @@ class GsaResults:
         self.f_d=f_d
         self.f_ab=f_ab
         self.samp_d=samp_d
-        self.mu_star=mu_star
-        self.sigma2=sigma2
+        self.morris_mean_abs=morris_mean_abs
+        self.morris_mean = morris_mean
+        self.morris_std=morris_std
     pass
 
 
@@ -71,20 +72,28 @@ def run_gsa(model, gsa_options):
         # 4) Produces histogram plots for QOI values (not yet implemented)
     # Required Inputs: Object of class "model" and object of class "options"
     # Outputs: Object of class gsa with fisher and sobol elements
-
-    #Get Parameter Distributions
-    model=get_samp_dist(model, gsa_options)
+    
     gsa_results = GsaResults()
     #Morris Screening
     if gsa_options.run_morris:
-        mu_star, sigma2 = calculate_morris(model, gsa_options)
-        gsa_results.mu_star=mu_star
-        gsa_results.sigma2=sigma2
+        #Set non-biased perturbation distance for even l
+        #Source: Smith, R. 2011. Uncertainty Quanitification. p.333
+        pert_distance = gsa_options.l_morris/ (2*(gsa_options.l_morris-1))
+        
+        morris_samp = get_morris_poi_sample(model.sample_fcn, gsa_options.n_samp_morris,\
+                                            model.n_poi, pert_distance)
+            
+        morris_mean_abs, morris_mean, morris_std = calculate_morris(\
+                                             model.eval_fcn, morris_samp, \
+                                             pert_distance)
+        gsa_results.morris_mean_abs=morris_mean_abs
+        gsa_results.morris_mean = morris_mean
+        gsa_results.morris_std=morris_std
 
     #Sobol Analysis
     if gsa_options.run_sobol:
         #Make Distribution Samples and Calculate model results
-        [f_a, f_b, f_ab, f_d, samp_d] = get_samples(model, gsa_options)
+        [f_a, f_b, f_ab, f_d, samp_d] = get_sobol_sample(model, gsa_options)
         #Calculate Sobol Indices
         [sobol_base, sobol_tot]=calculate_sobol(f_a, f_b, f_ab, f_d)
         gsa_results.f_d=f_d
@@ -103,7 +112,7 @@ def run_gsa(model, gsa_options):
 ###----------------------------------------------------------------------------------------------
 
 
-def get_samples(model,gsa_options):
+def get_sobol_sample(model,gsa_options):
     """Constructs and evaluates sobol samples using predefined sampling distributions.
         Currently only function for uniform or saltelli normal
     
@@ -129,15 +138,17 @@ def get_samples(model,gsa_options):
     """
     n_samp_sobol = gsa_options.n_samp_sobol
     # Make 2 POI sample matrices with n_samp_sobol samples each
-    if model.dist.lower()=='uniform' or model.dist.lower()=='saltellinormal':
-        (samp_a, samp_b)=model.sample(n_samp_sobol);                                     #Get both A and B samples so no repeated values
-    else:
-        #-------Error, need to switch these samplings to the join Saltelli-------------
-        samp_a = model.sample(n_samp_sobol)
-        samp_b = model.sample(n_samp_sobol)
-    # Calculate matrices of QOI values for each POI sample matrix
-    f_a = model.eval_fcn(samp_a).reshape([n_samp_sobol, model.n_qoi])  # n_samp_sobol x nQOI out matrix from A
-    f_b = model.eval_fcn(samp_b).reshape([n_samp_sobol, model.n_qoi])  # n_samp_sobol x nQOI out matrix from B
+    if np.all(model.dist_type!=np.array(["satelli normal", "satelli uniform"])):
+              warnings.warn("Non-satelli sampling algorithm used for Sobol analysis."\
+                            + " Suggested distribution types are satelli normal "+\
+                                "and satelli uniform.")
+    sample_compact = model.sample_fcn(2*n_samp_sobol)
+    f_compact = model.eval_fcn(sample_compact)
+    # Seperate sample into a and b for algorithm
+    samp_a = sample_compact[:n_samp_sobol]
+    samp_b = sample_compact[n_samp_sobol:]
+    f_a = f_compact[:n_samp_sobol]
+    f_b = f_compact[n_samp_sobol:] # n_samp_sobol x nQOI out matrix from B
     # Stack the output matrices into a single matrix
     f_d = np.concatenate((f_a.copy(), f_b.copy()), axis=0)
 
@@ -155,7 +166,7 @@ def get_samples(model,gsa_options):
         else:
             f_ab[:, i_param, :] = model.eval_fcn(samp_ab)  # n_samp_sobol x nPOI x nQOI tensor
         del samp_ab
-    return f_a, f_b, f_ab, f_d, np.concatenate((samp_a.copy(), samp_b.copy()), axis=0)
+    return f_a, f_b, f_ab, f_d, sample_compact
 
 def calculate_sobol(f_a, f_b, f_ab, f_d):
     """Calculates 1st order and total sobol indices using Saltelli approximation formula.
@@ -216,9 +227,13 @@ def calculate_sobol(f_a, f_b, f_ab, f_d):
 
 
     return sobol_base, sobol_tot
+#==============================================================================
+#----------------------------------Morris Sampling-----------------------------
+#==============================================================================
 
-##-------------------------------------GetMorris-------------------------------------------------------
-def calculate_morris(model,gsa_options):
+
+##--------------------------------calculate_morris-----------------------------
+def calculate_morris(eval_fcn, morris_samp, pert_distance, verbose = False):
     """Calculates morris samples using information from Model and GsaOptions objects.
     
     Parameters
@@ -235,48 +250,130 @@ def calculate_morris(model,gsa_options):
     np.ndarray
         n_qoi x n_poi array of morris sensitivity variance indices
     """
-    #Define delta
-    delta=(gsa_options.l_morris+1)/(2*gsa_options.l_morris)
-    #Get Parameter Samples- use parameter distribution
-    param_samp=model.sample(gsa_options.n_samp_morris)[0]
-    #Calulate derivative indices
-    d= np.empty((gsa_options.n_samp_morris, model.n_poi, model.n_qoi)) #n_qoi x n_poi x nSamples
-    #Define constant sampling matrices
-    J=np.ones((model.n_poi+1,model.n_poi))
+    #Evaluate Sample
+    f_eval_compact = eval_fcn(morris_samp)
+    if verbose:
+        print(f_eval_compact)
+    
+    #Compute # of pois, qois and samples to ensure consitency
+    if morris_samp.ndim == 1:
+        n_poi = 1
+    elif morris_samp.ndim == 2:
+        n_poi = morris_samp.shape[1]
+    else:
+        raise Exception("More than 2 dimensions in morris_samp")
+    #Convert to int so it can be used in indexing
+    n_samp = int(morris_samp.shape[0]/(n_poi+1))
+    if f_eval_compact.ndim == 2:
+        n_qoi = f_eval_compact.shape[1]
+    elif f_eval_compact.ndim ==1:
+        n_qoi =1
+    else:
+        raise Exception("More than 2 dimensions in f_eval")
+        
+    #Uncompact Samples
+    f_eval_seperated = morris_seperate(f_eval_compact, n_samp, n_poi, n_qoi)
+    morris_samp_seperated = morris_seperate(morris_samp, n_samp, n_poi, n_poi)
+    if verbose:
+        print("morris samp seperated: " + str(morris_samp_seperated))
+    
+    #Get which sample perturbs which poi
+    poi_pert_location = get_poi_pert_location(morris_samp_seperated)
+    if verbose:
+        print("poi_pert_location: " + str(poi_pert_location))
+        
+        
+    #initialize data storage arrays with 1 dimension lower if n_qoi =1
+    if n_qoi > 1:
+        deriv_approx = np.empty((n_samp, n_poi, n_qoi))  # n_samp x n_poi x n_qoi
+    else: 
+        deriv_approx = np.empty((n_samp, n_poi))  # n_samp x n_poi
+    if verbose:
+        print("QOIs : " + str(f_eval_seperated))
+    
+    #Apply finite difference formula 
+    #Source: Smith, R. 2011, Uncertainty Quanitification. p.333
+    for i_samp in range(n_samp):
+        for i_pert in range(n_poi): 
+            i_poi = poi_pert_location[i_samp, i_pert]
+            deriv_approx[i_samp,i_poi] = (f_eval_seperated[i_samp,i_pert+1] - \
+                                          f_eval_seperated[i_samp,i_pert])/ pert_distance
+    # for i_poi in range(n_poi):
+    #     deriv_approx[:,i_poi] = f_eval_seperated[:,i_poi+1] - f_eval_seperated[:,i_poi]
+    if verbose:
+        print("deriv approx: " + str(deriv_approx))
+        
+    #Apply Morris Index formula
+    #Source: Smith, R. 2011, Uncertainty Quanitification. p.332
+    morris_mean_abs = np.mean(np.abs(deriv_approx),axis = 0) # n_poi x n_qoi
+    morris_mean = np.mean(deriv_approx, axis = 0)
+    morris_std=np.sqrt(np.var(deriv_approx, axis=0)) # n_poi x n_qoi
+    
+    if verbose:
+        print("morris mean abs: " + str(morris_mean_abs))
+        print("morris mean abs: " + str(morris_mean))
+        print("morris st: " + str(morris_std))
+
+    return morris_mean_abs, morris_mean, morris_std
+
+def morris_seperate(qoi_compact, n_samp, n_poi, n_qoi):
+    if n_qoi > 1:
+        qoi_seperated = np.empty((n_samp, n_poi+1, n_qoi))
+    else: 
+        qoi_seperated = np.empty((n_samp, n_poi+1))
+    #Seperate each parameter search for ease of computation
+    for i_samp in range(n_samp):
+        qoi_seperated[i_samp] = qoi_compact[i_samp*(n_poi+1):(i_samp+1)*(n_poi+1)]
+        
+    return qoi_seperated
+
+def get_poi_pert_location(morris_samp_seperate):
+    n_samp = morris_samp_seperate.shape[0]
+    n_poi = morris_samp_seperate.shape[2]
+    poi_pert_location = np.empty((n_samp, n_poi))
+    for i_samp in range(n_samp):
+        for i_poi in range(n_poi):
+            poi_pert_location[i_samp,i_poi] = np.argmax(np.abs(morris_samp_seperate[i_samp,i_poi+1] \
+                                          - morris_samp_seperate[i_samp,i_poi]))
+    return poi_pert_location.astype(int)
+##---------------------------get_morris_poi_sample-----------------------------
+
+def get_morris_poi_sample(param_dist, n_samp, n_poi, pert_distance, random = False):
+    #Use sobol distributions for low discrepancy
+    #Generate n_samp_morris samples
+    random_samp =  param_dist(n_samp)
+    #Define Sampling matrices that are constant
+    J=np.ones((n_poi+1,n_poi))
     B = (np.tril(np.ones(J.shape), -1))
-    for i_samp in range(0,gsa_options.n_samp_morris):
-        #Define Random Sampling matrices
-        D=np.diag(np.random.choice(np.array([1,-1]), size=(model.n_poi,)))
-        P=np.identity(model.n_poi)
-        #np.random.shuffle(P)
-        jTheta=param_samp[i_samp,]*J
-        #CalculateMorris Sample matrix
-        Bj=np.matmul(jTheta+delta/2*(np.matmul((2*B-J),D)+J),P)
-        fBj=model.eval_fcn(Bj)
-        for i_poi in np.arange(0,model.n_poi):
-            index_nonzero=np.nonzero(Bj[i_poi+1,:]-Bj[i_poi,:])[0][0]
-            #print(np.nonzero(Bj[i_poi+1,:]-Bj[i_poi,:]))
-            if Bj[i_poi+1,index_nonzero]-Bj[i_poi,index_nonzero]>0:
-                if model.n_qoi==1:
-                    d[i_samp,index_nonzero]=(fBj[i_poi+1]-fBj[i_poi])/delta
-                else:
-                    d[i_samp,index_nonzero,:]=(fBj[i_poi+1]-fBj[i_poi])/delta
-            elif Bj[i_poi+1,index_nonzero]-Bj[i_poi,index_nonzero]<0:
-                if model.n_qoi==1:
-                    d[i_samp,index_nonzero]=(fBj[i_poi]-fBj[i_poi+1])/delta
-                else:
-                    d[i_samp,index_nonzero,:]=(fBj[i_poi,:]-fBj[i_poi+1,:])/delta
-            else:
-                raise(Exception('0 difference identified in Morris'))
-    #Compute Indices- all outputs are n_qoi x n_poi
-    mu_star=np.mean(np.abs(d),axis=0)
-    sigma2=np.var(d, axis=0)
-
-    return mu_star, sigma2
-
+    morris_samp_compact = np.empty((n_samp*(n_poi+1), n_poi))
+    for i_samp in range(n_samp):
+        jTheta=random_samp[i_samp,]*J
+        #Calculate Morris Sample matrix
+        #Source: Smith, R. 2011. Uncertainty Quantification. p.334
+        if random == True:  
+            #Define Random Sampling matrices
+            #D=np.diag(np.random.choice(np.array([1,-1]), size=(n_poi,)))
+            #NOTE: using non-random step direction to keep denominator in deriv approx
+            #   equal to delta rather than -delta for some samples. Random form is
+            #   kept above in comments 
+            D=np.diag(np.random.choice(np.array([1,1]), size=(n_poi,)))
+            P=np.identity(n_poi)
+            np.random.shuffle(P)
+            samp_mat = np.matmul(jTheta+pert_distance/2*(np.matmul((2*B-J),D)+J),P)
+        elif random == False:
+            #Define non-random Sampling matrices
+            D=np.diag(np.random.choice(np.array([1,1]), size=(n_poi,)))
+            P=np.identity(n_poi)
+            np.random.shuffle(P)
+            # Only use non-random formulations for testing matrix generation
+            samp_mat = jTheta+pert_distance/2*(np.matmul((2*B-J),D)+J)
+        #Stack each grid seach so that a single eval_fcn call is required
+        morris_samp_compact[i_samp*(n_poi+1):(i_samp+1)*(n_poi+1),:] = samp_mat
+    return morris_samp_compact
+        
 
 ##--------------------------------------GetSampDist----------------------------------------------------
-def get_samp_dist(model, gsa_options):
+def get_samp_dist(dist_type, dist_param, n_poi, fcn_inverse_cdf = np.nan):
     """Adds sampling function sample to model for drawing of low-discrepency
         from given distribution type.
     
@@ -293,30 +390,37 @@ def get_samp_dist(model, gsa_options):
         model object with added sample function
     """
     # Determine Sample Function- Currently only 1 distribution type can be defined for all parameters
-    if model.dist.lower() == 'normal':  # Normal Distribution
-        sample = lambda n_samp_sobol: np.random.randn(n_samp_sobol,model.n_poi)*np.sqrt(model.dist_param[[1], :]) + model.dist_param[[0], :]
-    elif model.dist.lower() == 'saltellinormal':
-        sample = lambda n_samp_sobol: saltelli_normal(n_samp_sobol, model.dist_param)
-    elif model.dist.lower() == 'uniform':  # uniform distribution
+    if dist_type == 'normal':  # Normal Distribution
+        sample_fcn = lambda n_samp_sobol: np.random.randn(n_samp_sobol, n_poi)*\
+            np.sqrt(dist_param[[1], :]) + dist_param[[0], :]
+    elif dist_type == 'saltelli normal':
+        sample_fcn = lambda n_samp_sobol: saltelli_normal(n_samp_sobol, dist_param)
+    elif dist_type == 'uniform':  # uniform distribution
         # doubleParms=np.concatenate(model.dist_param, model.dist_param, axis=1)
-        sample = lambda n_samp_sobol: saltelli_sample(n_samp_sobol,model.dist_param)
-    elif model.dist.lower() == 'exponential': # exponential distribution
-        sample = lambda n_samp_sobol: np.random.exponential(model.dist_param,size=(n_samp_sobol,model.n_poi))
-    elif model.dist.lower() == 'beta': # beta distribution
-        sample = lambda n_samp_sobol:np.random.beta(model.dist_param[[0],:], model.dist_param[[1],:],\
-                                               size=(n_samp_sobol,model.n_poi))
-    elif model.dist.lower() == 'InverseCDF': #Arbitrary distribution given by inverse cdf
-        sample = lambda n_samp_sobol: gsa_options.fcn_inverse_cdf(np.random.rand(n_samp_sobol,model.n_poi))
+        sample_fcn = lambda n_samp_sobol: np.random.rand(n_samp_sobol, n_poi)*\
+            (dist_param[[1], :]-dist_param[[0],:]) + dist_param[[0], :]
+    elif dist_type == 'saltelli uniform':  # uniform distribution
+        # doubleParms=np.concatenate(model.dist_param, model.dist_param, axis=1)
+        sample_fcn = lambda n_samp_sobol: saltelli_uniform(n_samp_sobol, dist_param)
+    elif dist_type == 'exponential': # exponential distribution
+        sample_fcn = lambda n_samp_sobol: np.random.exponential(dist_param,size=(n_samp_sobol, n_poi))
+    elif dist_type == 'beta': # beta distribution
+        sample_fcn = lambda n_samp_sobol:np.random.beta(dist_param[[0],:], dist_param[[1],:],\
+                                               size=(n_samp_sobol, n_poi))
+    elif dist_type == 'InverseCDF': #Arbitrary distribution given by inverse cdf
+        if fcn_inverse_cdf == np.nan:
+            raise Exception("InverseCDF distribution selected but no function provided.")
+        sample_fcn = lambda n_samp_sobol: fcn_inverse_cdf(np.random.rand(n_samp_sobol, n_poi))
     else:
-        raise Exception("Invalid value for gsa_options.dist. Supported distributions are normal, uniform, exponential, beta, \
+        raise Exception("Invalid value for model.dist_type. Supported distributions are normal, uniform, exponential, beta, \
         and InverseCDF")  # Raise Exception if invalide distribution is entered
-    model.sample=sample
-    return model
+    
+    return sample_fcn
 
 
 
-def saltelli_sample(n_samp_sobol,dist_param):
-    """Constructs a uniform low discrepency saltelli sample for use in Sobol
+def saltelli_sample(n_samp, n_poi):
+    """Constructs a uniform [0,1] low discrepency saltelli sample for use in Sobol
         index approximation
     
     Parameters
@@ -329,26 +433,40 @@ def saltelli_sample(n_samp_sobol,dist_param):
     Returns
     -------
     np.ndarray
-        POI sample part a
-    np.ndarray
-        POI sample part b
+        Low discrepancy POI sample of uniform distribution on [0,1] constructed 
+        using satelli's alrogrithm
     """
-    n_poi=dist_param.shape[1]
-    #base_sample=sobol.sample(dimension=n_poi*2, n_points=n_samp_sobol, skip=1099)
-    base_sample=sobol_sample(n_samp_sobol,n_poi*2)
-    base_a=base_sample[:,:n_poi]
-    base_b=base_sample[:,n_poi:2*n_poi]
-    samp_a=dist_param[[0],:]+(dist_param[[1],:]-dist_param[[0],:])*base_a
-    samp_b=dist_param[[0],:]+(dist_param[[1],:]-dist_param[[0],:])*base_b
-    return (samp_a, samp_b)
+    
+    #Add .5 to n_samp/2 so that if n_samp is odd, an extra sample is generated
+    sampler = qmc.Sobol(d= n_poi*2, scramble = True)
+    #Use the smallest log2 sample size at least as large as n_samp to keep
+    #   quadrature balance 
+    #   (see https://scipy.github.io/devdocs/reference/generated/scipy.stats.qmc.Sobol.html )
+    base_sample = sampler.random_base2(m=int(np.ceil(np.log2(n_samp/2))))
+    
+    #Add .5 to n_samp/2 so that if n_samp is odd, an extra sample is generated
+    base_sample=base_sample[:int(n_samp/2+.5),:]
+    
+    sample = np.empty((n_samp, n_poi))
+    
+    #Seperate and stack half the samples in the 2nd dimension for saltelli's 
+    # algorithm
+    if n_samp%2==0:
+        sample[:int((n_samp)/2),:]=base_sample[:,0:n_poi]
+        sample[int((n_samp)/2):,:]=base_sample[:,n_poi:]
+    else :
+        sample[:int((n_samp+.5)/2),:] = base_sample[:,0:n_poi]
+        sample[int((n_samp+.5)/2):-1,:] = base_sample[:,n_poi:]
+    return sample
 
-def saltelli_normal(n_samp_sobol, dist_param):
-    """Constructs a normal low discrepency saltelli sample for use in Sobol
+
+def saltelli_uniform(n_samp, dist_param):
+    """Constructs a uniform low discrepency saltelli sample for use in Sobol
         index approximation
     
     Parameters
     ----------
-    n_samp_sobol : int
+    n_samp: int
         Number of samples to take
     dist_param : np.ndarray
         2 x n_poi array of mean and variance for each parameter
@@ -356,17 +474,38 @@ def saltelli_normal(n_samp_sobol, dist_param):
     Returns
     -------
     np.ndarray
-        POI sample part a
-    np.ndarray
-        POI sample part b
+        Low discrepancy POI sample of uniform distribution constructed using 
+        satelli's alrogrithm
     """
     n_poi=dist_param.shape[1]
-    #base_sample=sobol.sample(dimension=n_poi*2, n_points=n_samp_sobol, skip=1099)
-    base_sample=sobol_sample(n_samp_sobol,n_poi*2)
-    base_a=base_sample[:,:n_poi]
-    base_b=base_sample[:,n_poi:2*n_poi]
-    transformA=sct.norm.ppf(base_a)
-    transformB=sct.norm.ppf(base_b)
-    samp_a=transformA*np.sqrt(dist_param[[1], :]) + dist_param[[0], :]
-    samp_b=transformB*np.sqrt(dist_param[[1], :]) + dist_param[[0], :]
-    return (samp_a, samp_b)
+    
+    sample_base = saltelli_sample(n_samp,n_poi)
+    
+    sample_transformed = dist_param[[0],:]+(dist_param[[1],:]-dist_param[[0],:])*sample_base
+    return sample_transformed
+
+
+def saltelli_normal(n_samp, dist_param):
+    """Constructs a normal low discrepency saltelli sample for use in Sobol
+        index approximation
+    
+    Parameters
+    ----------
+    n_samp: int
+        Number of samples to take
+    dist_param : np.ndarray
+        2 x n_poi array of mean and variance for each parameter
+        
+    Returns
+    -------
+    np.ndarray
+        Low discrepancy POI sample of normal distribution constructed using 
+        satelli's alrogrithm
+    """
+    
+    n_poi=dist_param.shape[1]
+    
+    sample_base = saltelli_sample(n_samp,n_poi)
+    sample_transform=sct.norm.ppf(sample_base)*np.sqrt(dist_param[[1], :]) \
+        + dist_param[[0], :]
+    return sample_transform
