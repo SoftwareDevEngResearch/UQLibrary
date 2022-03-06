@@ -112,3 +112,16 @@ def test_linear_portfolio():
     
     results = uq.run_uq(model, options)
     assert np.allclose(results.gsa.morris_mean_abs, np.array([2, 1]))
+    
+def test_sir_4param():
+    (model, options) = UQtoolbox_examples.GetExample("sir 4 param")
+    options.gsa.run = True
+    options.lsa.run = False
+    options.gsa.run_sobol = False
+    options.gsa.run_morris = True
+    options.gsa.l_morris = 1/40
+    options.gsa.n_samp_morris = 100
+    
+    results = uq.run_uq(model, options)
+    assert np.allclose(results.gsa.morris_mean_abs, np.array([.1448,.2422, 1.0257, 1.0012])*10**4, rtol = 10**(-2))
+    

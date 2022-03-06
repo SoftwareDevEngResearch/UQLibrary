@@ -148,6 +148,15 @@ def GetExample(example, **kwargs):
                          )
         options.lsa.method='finite'
         options.lsa.xDelta=.00001
+    elif example.lower() == 'sir enedmic':
+            model = uq.Model(eval_fcn = lambda params: SIR_endemic_integrated(params, np.array([900, 100, 0]), 20),
+                             base_poi=np.array([8, 1.5]),
+                             name_poi=np.array(['gamma', 'k', 'r', 'delta']),
+                             dist_type='uniform',
+                             dist_param=np.array([[0, 0], [1, 1]])
+                             )
+            options.lsa.method='finite'
+            options.lsa.xDelta=.00001
         
     elif example.lower() == 'sobol test function':
         model = uq.Model(eval_fcn= lambda params: SobolTestFunction(params,np.array([78, 12, .5, 2, 97, 33])),
@@ -252,6 +261,34 @@ def SolveSIRinfected(params,y0,tEval):
                                       t_eval=tEval)
             infected[i,:]=sol.y[1,:]
     return infected
+
+
+def SIR_endemic_integrated(params,y0,tEval):
+    if params.ndim==1:
+        sol=integrate.solve_ivp(lambda t,y: SIRdydt_endemic(params,t,y), np.array([0, np.max(tEval)]),y0,t_eval=tEval)
+        recovered=sol.y[2,:]
+        tdiff = sol.t[1:] - sol.t[:-1]
+        rhr = np.sum(recovered[1:]*tdiff)
+        lhr = np.sum(recovered[:-1]*tdiff)
+        total_infected = (rhr+lhr)/2
+    else:
+        infected=np.empty((params.shape[0]))
+        for i in np.arange(0,params.shape[0]):
+            sol = integrate.solve_ivp(lambda t, y: SIRdydt_endemic(params[i,], t, y), np.array([0, np.max(tEval)]), y0,
+                                      t_eval=tEval)
+            recovered=sol.y[2,:]
+            tdiff = sol.t[1:] - sol.t[:-1]
+            rhr = np.sum(recovered[1:]*tdiff)
+            lhr = np.sum(recovered[:-1]*tdiff)
+            total_infected[i,:] = (rhr+lhr)/2
+    return infected
+
+def SIRdydt_endemic(params,t,y):
+    dydt=np.empty(3)
+    dydt[0] = params[3]*(y[1]+y[2])-params[0]*params[1]*y[0]*y[1]
+    dydt[1] = params[0]*params[1]*y[0]*y[1] - (params[3]+params[2])*y[1]
+    dydt[2] = params[2]*y[1]-params[3]*y[2]
+    return dydt
 
 def SIRdydt(params,t,y):
     dydt=np.empty(3)
