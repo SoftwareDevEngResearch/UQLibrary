@@ -16,6 +16,8 @@ from tabulate import tabulate                       #Used for printing tables to
 import SALib.sample.saltelli as sobol
 import scipy.stats as sct
 
+import mpi4py.MPI as MPI
+
 #Package Modules
 import lsa
 import gsa
@@ -228,7 +230,7 @@ class Results:
 #   sensitivity analysis and global sensitivity analysis can be run independently with LSA and GSA respectively
 
 ##--------------------------------------RunUQ-----------------------------------------------------
-def run_uq(model, options):
+def run_uq(model, options, logging = False):
     """Runs both the local and global sensitivity, and result printing, saving, and plotting.
     
     Parameters
@@ -237,16 +239,28 @@ def run_uq(model, options):
         Object of class Model holding run information.
     options : Options
         Object of class Options holding run settings.
+    logging : bool or int
+        Holds level 
         
     Returns
     -------
     Results 
         Object of class Results holding all run results.
     """
+    mpi_comm = MPI.COMM_WORLD
+    mpi_rank = mpi_comm.Get_rank()
+    mpi_size = mpi_comm.Get_size()
+    
+    if logging : 
+        print("Starting UQ with precessor " + str(mpi_rank) + " of "+ str(mpi_size) + ".")
+    
+    #Only hold results in base processor
     results = Results()
-    #Run Local Sensitivity Analysis
-    if options.lsa.run:
+        
+    #Run Local Sensitivity Analysis only on base processor
+    if mpi_rank == 0 and options.lsa.run:
         results.lsa = lsa.run_lsa(model, options.lsa)
+        #---------------Broadcast results.lsa to other threads-----------
 
     #Run Global Sensitivity Analysis
     # if options.gsa.run:
@@ -255,20 +269,20 @@ def run_uq(model, options):
         #     results.gsa=GSA(results.lsa.reducedModel, options)
         # else:
     if options.gsa.run:
-        results.gsa = gsa.run_gsa(model, options.gsa)
+        results.gsa = gsa.run_gsa(model, options.gsa, logging = False)
 
-    #Print Results
-    if options.display:
+    #Print, save, and plot Results only on thread 0
+    if options.display and mpi_rank ==0:
         print_results(results,model,options)                     #Print results to standard output path
 
-    if options.save:
+    if options.save and mpi_rank == 0:
         original_stdout = sys.stdout                            #Save normal output path
         sys.stdout=open(options.path + 'Results.txt', 'a+')            #Change output path to results file
         print_results(results,model,options)                     #Print results to file
         sys.stdout=original_stdout                              #Revert normal output path
 
     #Plot Samples
-    if options.gsa.run_sobol & options.gsa.run:
+    if options.gsa.run_sobol and options.gsa.run and mpi_rank == 0:
         plot_gsa(model, results.gsa.samp_d, results.gsa.f_d, options)
 
     return results

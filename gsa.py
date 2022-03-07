@@ -16,6 +16,8 @@ import warnings
 from scipy.stats import qmc
 import scipy.stats as sct
 
+import mpi4py.MPI as MPI
+
 class GsaOptions:
     def __init__(self, run = True, run_sobol=True, run_morris=True, n_samp_sobol=100000, \
                  n_samp_morris=4, l_morris=3):
@@ -50,7 +52,7 @@ class GsaResults:
 
 
 ##--------------------------------------GSA-----------------------------------------------------
-def run_gsa(model, gsa_options):
+def run_gsa(model, gsa_options, logging = False):
     """Implements global sensitivity analysis using Morris or Sobol analysis.
     
     Parameters
@@ -73,25 +75,40 @@ def run_gsa(model, gsa_options):
     # Required Inputs: Object of class "model" and object of class "options"
     # Outputs: Object of class gsa with fisher and sobol elements
     
+    #Load mpi details to keep track of thread number
+    mpi_comm = MPI.COMM_WORLD
+    mpi_rank = mpi_comm.Get_rank()
+    mpi_size = mpi_comm.Get_size()
+    
+    # Initialize gsa_results in all threads
     gsa_results = GsaResults()
+    
     #Morris Screening
     if gsa_options.run_morris:
         #Set non-biased perturbation distance for even l
         #Source: Smith, R. 2011. Uncertainty Quanitification. p.333
         pert_distance = gsa_options.l_morris/ (2*(gsa_options.l_morris-1))
         
-        morris_samp = get_morris_poi_sample(model.sample_fcn, gsa_options.n_samp_morris,\
-                                            model.n_poi, pert_distance)
+        #Create parameter sample only on thread 0 since it need not be parallelized
+        # initialize memory location on all threads
+        morris_samp = np.zeros((gsa_options.n_samp_morris*(model.n_poi+1), model.n_poi),dtype = float)
+        if logging > 1:
+            print("initialized morris_samp of size: " + str(morris_samp.shape))
+        if mpi_rank == 0:
+            morris_samp = get_morris_poi_sample(model.sample_fcn, gsa_options.n_samp_morris,\
+                                                model.n_poi, pert_distance)
+        mpi_comm.Bcast([morris_samp,MPI.DOUBLE], root = 0)
+                
             
         morris_mean_abs, morris_mean, morris_std = calculate_morris(\
                                              model.eval_fcn, morris_samp, \
-                                             pert_distance)
+                                             pert_distance, logging = logging)
         gsa_results.morris_mean_abs=morris_mean_abs
         gsa_results.morris_mean = morris_mean
         gsa_results.morris_std=morris_std
 
-    #Sobol Analysis
-    if gsa_options.run_sobol:
+    #Sobol Analysis Un parallelized for now
+    if gsa_options.run_sobol and mpi_rank == 0:
         #Make Distribution Samples and Calculate model results
         [f_a, f_b, f_ab, f_d, samp_d] = get_sobol_sample(model, gsa_options)
         #Calculate Sobol Indices
@@ -103,6 +120,7 @@ def run_gsa(model, gsa_options):
         gsa_results.samp_d=samp_d
         gsa_results.sobol_base=sobol_base
         gsa_results.sobol_tot=sobol_tot
+        #------------broadcast gsa results to other threads--------------------
         
     return gsa_results
 
@@ -233,7 +251,7 @@ def calculate_sobol(f_a, f_b, f_ab, f_d):
 
 
 ##--------------------------------calculate_morris-----------------------------
-def calculate_morris(eval_fcn, morris_samp, pert_distance, verbose = False):
+def calculate_morris(eval_fcn, morris_samp, pert_distance, logging = False):
     """Calculates morris samples using information from Model and GsaOptions objects.
     
     Parameters
@@ -251,68 +269,96 @@ def calculate_morris(eval_fcn, morris_samp, pert_distance, verbose = False):
         n_qoi x n_poi array of morris sensitivity variance indices
     """
     #Evaluate Sample
-    f_eval_compact = eval_fcn(morris_samp)
-    if verbose:
-        print(f_eval_compact)
-    
-    #Compute # of pois, qois and samples to ensure consitency
-    if morris_samp.ndim == 1:
-        n_poi = 1
-    elif morris_samp.ndim == 2:
-        n_poi = morris_samp.shape[1]
+    #Load mpi details to keep track of thread number
+    mpi_comm = MPI.COMM_WORLD
+    mpi_rank = mpi_comm.Get_rank()
+    mpi_size = mpi_comm.Get_size()
+    if logging and mpi_rank == 0:
+        print("Evaulating Morris Sample")
+        
+    if mpi_size == 1:
+        f_eval_compact = eval_fcn(morris_samp)
     else:
-        raise Exception("More than 2 dimensions in morris_samp")
-    #Convert to int so it can be used in indexing
-    n_samp = int(morris_samp.shape[0]/(n_poi+1))
-    if f_eval_compact.ndim == 2:
-        n_qoi = f_eval_compact.shape[1]
-    elif f_eval_compact.ndim ==1:
-        n_qoi =1
-    else:
-        raise Exception("More than 2 dimensions in f_eval")
+        f_eval_compact = parallel_eval(eval_fcn, morris_samp, logging = logging)
         
-    #Uncompact Samples
-    f_eval_seperated = morris_seperate(f_eval_compact, n_samp, n_poi, n_qoi)
-    morris_samp_seperated = morris_seperate(morris_samp, n_samp, n_poi, n_poi)
-    if verbose:
-        print("morris samp seperated: " + str(morris_samp_seperated))
+    #Make sure all threads finish collecting f_eval_compact before continuing
+    mpi_comm.Barrier()
+    if logging > 1 and mpi_rank == 0:
+        print("f_eval_compact: " + str(f_eval_compact))
+        
+    # Initialize Morris indices so that the memory is reserved when broadcasting
+    morris_mean_abs = np.zeros((morris_samp.shape[1], f_eval_compact.shape[1]), dtype = float) # n_poi x n_qoi
+    morris_mean = np.zeros(morris_mean_abs.shape, dtype = float)
+    morris_std = np.zeros(morris_mean_abs.shape, dtype = float) # n_poi x n_qoi
     
-    #Get which sample perturbs which poi
-    poi_pert_location = get_poi_pert_location(morris_samp_seperated)
-    if verbose:
-        print("poi_pert_location: " + str(poi_pert_location))
+    # Perform morris calculation only on base thread
+    if mpi_rank == 0:
+        #Compute # of pois, qois and samples to ensure consitency
+        if morris_samp.ndim == 1:
+            n_poi = 1
+        elif morris_samp.ndim == 2:
+            n_poi = morris_samp.shape[1]
+        else:
+            raise Exception("More than 2 dimensions in morris_samp")
+        #Convert to int so it can be used in indexing
+        n_samp = int(morris_samp.shape[0]/(n_poi+1))
+        if f_eval_compact.ndim == 2:
+            n_qoi = f_eval_compact.shape[1]
+        elif f_eval_compact.ndim ==1:
+            n_qoi =1
+        else:
+            raise Exception("More than 2 dimensions in f_eval")
+            
+        #Uncompact Samples
+        f_eval_seperated = morris_seperate(f_eval_compact, n_samp, n_poi, n_qoi)
+        morris_samp_seperated = morris_seperate(morris_samp, n_samp, n_poi, n_poi)
+        if logging > 1:
+            print("morris samp seperated: " + str(morris_samp_seperated))
         
+        #Get which sample perturbs which poi
+        poi_pert_location = get_poi_pert_location(morris_samp_seperated)
+        if logging > 1:
+            print("poi_pert_location: " + str(poi_pert_location))
+            
+            
+        #initialize data storage arrays with 1 dimension lower if n_qoi =1
+        if n_qoi > 1:
+            deriv_approx = np.empty((n_samp, n_poi, n_qoi))  # n_samp x n_poi x n_qoi
+        else: 
+            deriv_approx = np.empty((n_samp, n_poi))  # n_samp x n_poi
+        if logging >1:
+            print("QOIs : " + str(f_eval_seperated))
         
-    #initialize data storage arrays with 1 dimension lower if n_qoi =1
-    if n_qoi > 1:
-        deriv_approx = np.empty((n_samp, n_poi, n_qoi))  # n_samp x n_poi x n_qoi
-    else: 
-        deriv_approx = np.empty((n_samp, n_poi))  # n_samp x n_poi
-    if verbose:
-        print("QOIs : " + str(f_eval_seperated))
-    
-    #Apply finite difference formula 
-    #Source: Smith, R. 2011, Uncertainty Quanitification. p.333
-    for i_samp in range(n_samp):
-        for i_pert in range(n_poi): 
-            i_poi = poi_pert_location[i_samp, i_pert]
-            deriv_approx[i_samp,i_poi] = (f_eval_seperated[i_samp,i_pert+1] - \
-                                          f_eval_seperated[i_samp,i_pert])/ pert_distance
-    # for i_poi in range(n_poi):
-    #     deriv_approx[:,i_poi] = f_eval_seperated[:,i_poi+1] - f_eval_seperated[:,i_poi]
-    if verbose:
-        print("deriv approx: " + str(deriv_approx))
+        #Apply finite difference formula 
+        #Source: Smith, R. 2011, Uncertainty Quanitification. p.333
+        if logging > 0:
+            print("Calculating Morris indices")
+        for i_samp in range(n_samp):
+            for i_pert in range(n_poi): 
+                i_poi = poi_pert_location[i_samp, i_pert]
+                deriv_approx[i_samp,i_poi] = (f_eval_seperated[i_samp,i_pert+1] - \
+                                              f_eval_seperated[i_samp,i_pert])/ pert_distance
+        # for i_poi in range(n_poi):
+        #     deriv_approx[:,i_poi] = f_eval_seperated[:,i_poi+1] - f_eval_seperated[:,i_poi]
+        if logging > 1:
+            print("deriv approx: " + str(deriv_approx))
+            
+        #Apply Morris Index formulas
+        #Source: Smith, R. 2011, Uncertainty Quanitification. p.332
+        morris_mean_abs = np.mean(np.abs(deriv_approx),axis = 0) # n_poi x n_qoi
+        morris_mean = np.mean(deriv_approx, axis = 0)
+        morris_std=np.sqrt(np.var(deriv_approx, axis=0)) # n_poi x n_qoi
         
-    #Apply Morris Index formula
-    #Source: Smith, R. 2011, Uncertainty Quanitification. p.332
-    morris_mean_abs = np.mean(np.abs(deriv_approx),axis = 0) # n_poi x n_qoi
-    morris_mean = np.mean(deriv_approx, axis = 0)
-    morris_std=np.sqrt(np.var(deriv_approx, axis=0)) # n_poi x n_qoi
-    
-    if verbose:
-        print("morris mean abs: " + str(morris_mean_abs))
-        print("morris mean abs: " + str(morris_mean))
-        print("morris st: " + str(morris_std))
+        if logging > 1:
+            print("morris mean abs: " + str(morris_mean_abs))
+            print("morris mean abs: " + str(morris_mean))
+            print("morris st: " + str(morris_std))
+        if logging : 
+            print("Broadcasting Morris Indices")
+    #Send out finished morris indices to all threads
+    mpi_comm.Bcast([morris_mean_abs, MPI.DOUBLE], root = 0)
+    mpi_comm.Bcast([morris_mean, MPI.DOUBLE], root = 0)
+    mpi_comm.Bcast([morris_std, MPI.DOUBLE], root = 0)
 
     return morris_mean_abs, morris_mean, morris_std
 
@@ -370,7 +416,91 @@ def get_morris_poi_sample(param_dist, n_samp, n_poi, pert_distance, random = Fal
         #Stack each grid seach so that a single eval_fcn call is required
         morris_samp_compact[i_samp*(n_poi+1):(i_samp+1)*(n_poi+1),:] = samp_mat
     return morris_samp_compact
-        
+
+#======================================================================================================
+#----------------------------Parallelization Support---------------------------------------------------
+#======================================================================================================
+
+def parallel_eval(eval_fcn, poi_sample, logging = False):
+    """ Seperates samples and parallelizes model computations
+
+    Parameters
+    ----------
+    eval_fcn : function
+        User defined function that maps POIs to QOIs
+    poi_sample : np.ndarray
+        n_samp x n_poi array of POI samples
+
+    Returns
+    -------
+    qoi_samp : np.ndarray
+        n_samp x n_qoi array of QOIs from each POI sample
+    """
+    mpi_comm = MPI.COMM_WORLD
+    mpi_rank = mpi_comm.Get_rank()
+    mpi_size = mpi_comm.Get_size()
+     
+    # Seperate poi samples into subsample for each thread
+    if mpi_rank == 0:
+        print("poi_sample in thread " + str(mpi_rank) + ": " + str(poi_sample))
+        for i_rank in range(mpi_size):
+            if mpi_rank == 0:
+                samp_per_subsample = int(np.floor(poi_sample.shape[0]/mpi_size))
+                if i_rank == 0:
+                    data = poi_sample[0:samp_per_subsample]
+                else: 
+                    if i_rank == mpi_size-1:
+                        data_broadcast = poi_sample[(i_rank*samp_per_subsample):]
+                    else:
+                        data_broadcast = poi_sample[(i_rank*samp_per_subsample):((i_rank+1)*samp_per_subsample)]
+                    mpi_comm.send(data_broadcast.shape, dest = i_rank, tag = 0)
+                    mpi_comm.Send([data_broadcast,MPI.DOUBLE],dest = i_rank, tag = 1)
+                    #print("poi_subsample sent to thread " + str(i_rank) + ": " + str(data_broadcast))
+    else:
+        data_shape = mpi_comm.recv(source = 0, tag = 0)
+        data = np.empty(data_shape)
+        mpi_comm.Recv(data,source=0, tag=1)
+                
+    
+    # Evaluate each subsamples
+    qoi_subsample = eval_fcn(data)
+    MPI.Comm.Barrier()
+    
+    qoi_sample = np.zeros((poi_sample.shape[0], qoi_subsample.shape[1]), dtype = float)
+    #print(poi_reconstructed)
+
+    if mpi_rank > 0:
+        mpi_comm.send(qoi_subsample.shape, dest = 0, tag = 0)
+        mpi_comm.Send([qoi_subsample, MPI.DOUBLE], dest = 0, tag =1)
+        #print("sending data from thread " + str(mpi_rank) + ": " + str(data))
+    elif mpi_rank ==0 :
+        total_samp=0
+        for i_rank in range(mpi_size):
+            if i_rank > 0:
+                subsample_shape = mpi_comm.recv(source = i_rank, tag = 0)
+                #print("receiving data from thread " + str(i_rank) + " of shape: " + str(data_shape))
+            else :
+                subsample_shape = qoi_subsample.shape
+            n_samp = subsample_shape[0]
+            if i_rank > 0:
+                #print("poi_reconstructed before receiving: " + str(poi_reconstructed))
+                mpi_comm.Recv(qoi_sample[total_samp:(total_samp+n_samp)], source = i_rank, tag=1)
+            else :
+                qoi_sample[total_samp:(total_samp+n_samp)] = qoi_subsample
+            if logging > 1:
+                print("qoi_reconstructed after receiving thread " + str(i_rank) + ": " + str(qoi_sample))
+            total_samp += n_samp 
+            
+    # Send back out qoi_sample so all threads have a return
+    mpi_comm.Bcast([qoi_sample, MPI.DOUBLE], root = 0)
+    
+    
+    return qoi_sample
+            
+#======================================================================================================
+#-----------------------------------Sampling-----------------------------------------------------------
+#======================================================================================================
+       
 
 ##--------------------------------------GetSampDist----------------------------------------------------
 def get_samp_dist(dist_type, dist_param, n_poi, fcn_inverse_cdf = np.nan):
