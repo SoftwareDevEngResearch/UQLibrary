@@ -1,7 +1,7 @@
 
 
-import UQtoolbox as uq
-import UQtoolbox_examples as uqExamples
+import UQLibrary as uq
+#import mpi4py.MPI as MPI
 
 def main():
     # #Set seed for reporducibility
@@ -37,11 +37,14 @@ def main():
     #f
     # [model, options] = uqExamples.GetExample('aluminum rod (normal)')
     #
-    [model, options] = uqExamples.GetExample('trial function')
+    [model, options] = uq.examples.GetExample('trial function')
+    options.gsa.run_sobol = False
+    options.display = True
+    options.save = True
     #
     # # Run UQ package
     # (baseSobol,totalSobol)= uq.TestAccuracy(model, options, np.arange(start=10000, stop=200000, step=5000))
-    results = uq.run_uq(model, options)
+    results = uq.run_uq(model, options, logging = 2)
     #
     # plt.plot(results.gsa.sampD[:450,0], results.gsa.sampD[:450,1],'rs')
     # plt.plot(results.gsa.sampD[options.gsa.nSamp:options.gsa.nSamp+450,0], results.gsa.sampD[options.gsa.nSamp:options.gsa.nSamp+450,1],'bo')
