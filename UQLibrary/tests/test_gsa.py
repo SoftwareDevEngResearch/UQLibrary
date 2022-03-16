@@ -42,7 +42,7 @@ def test_morris_linear():
     (morris_mean_abs, morris_mean, morris_std) = calculate_morris(eval_fcn, \
                                                                   sample, \
                                                                   delta,\
-                                                                  verbose = True)
+                                                                  logging = True)
     assert np.all(morris_mean_abs == coeff)
     
 def test_morris_artificial_linear():
@@ -69,7 +69,7 @@ def test_morris_artificial_linear():
     (morris_mean_abs, morris_mean, morris_std) = calculate_morris(eval_fcn, \
                                                                   sample, \
                                                                   delta,\
-                                                                  verbose = True)
+                                                                  logging = True)
     #print(morris_mean_abs)
     #print(morris_mean)
     #print(morris_std)

@@ -44,9 +44,9 @@ class GsaResults:
         self.morris_mean_abs=morris_mean_abs
         self.morris_mean = morris_mean
         self.morris_std=morris_std
-        self.morris_mean_abs_scaled =morris_mean_abs_scaled
-        self.morris_mean_scaled = morris_mean_scaled
-        self.morris_std_scaled = morris_std_scaled
+        #self.morris_mean_abs_scaled =morris_mean_abs_scaled
+        #self.morris_mean_scaled = morris_mean_scaled
+        #self.morris_std_scaled = morris_std_scaled
     pass
 
 
@@ -107,15 +107,15 @@ def run_gsa(model, gsa_options, logging = False):
         morris_mean_abs, morris_mean, morris_std = calculate_morris(\
                                              model.eval_fcn, morris_samp, \
                                              pert_distance, logging = logging)
-        morris_mean_abs_scaled = morris_mean_abs / np.abs(model.base_qoi)
-        morris_mean_scaled = morris_mean / model.base_qoi
-        morris_std_scaled = morris_std / model.base_qoi
+        #morris_mean_abs_scaled = morris_mean_abs / np.abs(model.base_qoi)
+        #morris_mean_scaled = morris_mean / model.base_qoi
+        #morris_std_scaled = morris_std / model.base_qoi
         gsa_results.morris_mean_abs=morris_mean_abs
         gsa_results.morris_mean = morris_mean
         gsa_results.morris_std=morris_std
-        gsa_results.morris_mean_abs_scaled =morris_mean_abs_scaled
-        gsa_results.morris_mean_scaled = morris_mean_scaled
-        gsa_results.morris_std_scaled = morris_std_scaled
+        #gsa_results.morris_mean_abs_scaled =morris_mean_abs_scaled
+        #gsa_results.morris_mean_scaled = morris_mean_scaled
+        #gsa_results.morris_std_scaled = morris_std_scaled
 
     #Sobol Analysis Un parallelized for now
     if gsa_options.run_sobol and mpi_rank == 0:
@@ -196,6 +196,7 @@ def get_sobol_sample(model,gsa_options):
         if model.n_qoi == 1:
             f_ab[:, i_param] = model.eval_fcn(samp_ab)
         else:
+            
             f_ab[:, i_param, :] = model.eval_fcn(samp_ab)  # n_samp_sobol x nPOI x nQOI tensor
         del samp_ab
     return f_a, f_b, f_ab, f_d, sample_compact
