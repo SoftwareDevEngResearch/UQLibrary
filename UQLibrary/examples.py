@@ -123,6 +123,7 @@ def GetExample(example, **kwargs):
                          dist_type='normal',
                          dist_param=np.array([[-18.4, .00191], [.1450**2, (1.4482*10**(-5))**2]]),
                          name_poi=np.array(['Phi', 'h']),
+                         name_qoi=np.array(["x=15", "x=25", "x=35", "x=45", "x=55"])
                          #name_qoi=np.array(['T(x=15)','T(x=55)'])
                          )
         options.path = '..\\Figures\\AluminumRod(Normal)'

@@ -32,8 +32,7 @@ class GsaOptions:
 class GsaResults:
     #
     def __init__(self,sobol_base=np.nan, sobol_tot=np.nan, f_a=np.nan, f_b=np.nan, f_d=np.nan, f_ab=np.nan, \
-                 samp_d=np.nan, morris_std=np.nan, morris_mean_abs=np.nan, morris_mean=np.nan,\
-                 morris_std_scaled=np.nan, morris_mean_abs_scaled=np.nan, morris_mean_scaled=np.nan):
+                 samp_d=np.nan, morris_std=np.nan, morris_mean_abs=np.nan, morris_mean=np.nan):
         self.sobol_base=sobol_base
         self.sobol_tot=sobol_tot
         self.f_a=f_a
@@ -44,9 +43,6 @@ class GsaResults:
         self.morris_mean_abs=morris_mean_abs
         self.morris_mean = morris_mean
         self.morris_std=morris_std
-        #self.morris_mean_abs_scaled =morris_mean_abs_scaled
-        #self.morris_mean_scaled = morris_mean_scaled
-        #self.morris_std_scaled = morris_std_scaled
     pass
 
 
@@ -102,20 +98,12 @@ def run_gsa(model, gsa_options, logging = False):
         mpi_comm.Bcast([morris_samp,MPI.DOUBLE], root = 0)
                 
             
-        if logging:
-            print("Caclulating Morris Indices")
         morris_mean_abs, morris_mean, morris_std = calculate_morris(\
                                              model.eval_fcn, morris_samp, \
                                              pert_distance, logging = logging)
-        #morris_mean_abs_scaled = morris_mean_abs / np.abs(model.base_qoi)
-        #morris_mean_scaled = morris_mean / model.base_qoi
-        #morris_std_scaled = morris_std / model.base_qoi
         gsa_results.morris_mean_abs=morris_mean_abs
         gsa_results.morris_mean = morris_mean
         gsa_results.morris_std=morris_std
-        #gsa_results.morris_mean_abs_scaled =morris_mean_abs_scaled
-        #gsa_results.morris_mean_scaled = morris_mean_scaled
-        #gsa_results.morris_std_scaled = morris_std_scaled
 
     #Sobol Analysis Un parallelized for now
     if gsa_options.run_sobol and mpi_rank == 0:
@@ -196,7 +184,6 @@ def get_sobol_sample(model,gsa_options):
         if model.n_qoi == 1:
             f_ab[:, i_param] = model.eval_fcn(samp_ab)
         else:
-            
             f_ab[:, i_param, :] = model.eval_fcn(samp_ab)  # n_samp_sobol x nPOI x nQOI tensor
         del samp_ab
     return f_a, f_b, f_ab, f_d, sample_compact
@@ -374,7 +361,7 @@ def calculate_morris(eval_fcn, morris_samp, pert_distance, logging = False):
             print("morris mean abs: " + str(morris_mean_abs))
             print("morris mean abs: " + str(morris_mean))
             print("morris st: " + str(morris_std))
-        if logging : 
+        if logging  and mpi_size > 1: 
             print("Broadcasting Morris Indices")
     #Send out finished morris indices to all threads
     mpi_comm.Bcast([morris_mean_abs, MPI.DOUBLE], root = 0)

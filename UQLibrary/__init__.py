@@ -291,13 +291,10 @@ def run_uq(model, options, logging = False):
                      morris_mean_abs = results.gsa.morris_mean_abs,
                      morris_mean = results.gsa.morris_mean,
                      morris_std = results.gsa.morris_std,
-                     morris_mean_abs_scaled = results.gsa.morris_mean_abs_scaled,
-                     morris_mean_scaled = results.gsa.morris_mean_scaled,
-                     morris_std_scaled = results.gsa.morris_std_scaled,
                      base_response = model.base_qoi)
 
     #Plot Samples
-    if options.gsa.run_sobol and options.gsa.run and mpi_rank == 0:
+    if options.gsa.run_sobol and options.gsa.run and options.plot and mpi_rank == 0:
         if logging: 
             print("Plotting Results")
         plot_gsa(model, results.gsa.samp_d, results.gsa.f_d, options)
