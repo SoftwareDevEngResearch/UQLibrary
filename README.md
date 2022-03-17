@@ -18,7 +18,7 @@ Required dependencies are *numpy*, *scipy*, *mpi4py*, *matplotlib*, and *tabulat
 python3 -m UQLibrary
 ```
 
-The source code for this example can be found in the *__main__.py* file of *UQLibrary*.
+The source code for this example can be found in the *__main __.py* file of *UQLibrary*.
 
 All methods of *UQLibrary* can be run collectively through the function *UQLibrary.run_uq* which requires as inputs variables of class *UQLibrary.Model* and *UQLibrary.Options*. Constructing a variable of *UQLibrary.Model* requires providing *base_poi*, a  one-dimensional numpy array of nominal parameter vaules, and *eval_fcn*, a function which inputs a *numpy* array of parameter values and outputs a *numpy* array of quantities of interest. For local sensitivity analysis methods, these arrays can be one dimensional, but for global sensitivity analysis methods they must be able to be two-dimensional such that the first dimension is the number of model evaluations to perform and the second dimension is the set of parameters/ outputs at each evaluation. *UQLibrary.Model* also automatically generates arrays of parameter and quantity names along with parameter sampling distributions but these can be manually set using keyword arguments.
 
@@ -36,9 +36,9 @@ functions to a project requires formulating a function which inputs a *numpy* ar
 
 To showcase running *UQLibrary* we consider local sensitivity and Sobol analysis of the Ishigami function,
 
-$$ f(x) =  sin(x_1) + a\sin(x_2)^2+b x_3^4\sin(x_1). $$
+f(x) =  sin(x<sub>1</sub>) + a sin(x<sub>2</sub>)<sup>2</sup>+b x<sub>3</sub><sup>4</sup>sin(x<sub>1</sub>).
 
-In *UQLibrary.examples* we wrote a function *Ishigami* which computes $f(x)$ for at $a=7$ and $b=0.1$. We additionally assume that that $x_1$, $x_2$, and $x_3$ have base values of $0$ and are all uniformly distributed in $[-\pi, \pi]$ and that we sample using Saltelli low-discrepency samples. To construct the corresponding object of class *UQLibrary.Model* we call,
+In *UQLibrary.examples* we wrote a function *Ishigami* which computes f(x) for at a=7 and b=0.1. We additionally assume that that x<sub>1</sub>, x<sub>2</sub>, and x<sub>3</sub> have base values of 0 and are all uniformly distributed in [-pi, pi] and that we sample using Saltelli low-discrepency samples. To construct the corresponding object of class *UQLibrary.Model* we call,
 
 ```
 model = UQLibrary.Model(eval_fcn=Ishigami,
@@ -48,7 +48,7 @@ model = UQLibrary.Model(eval_fcn=Ishigami,
                               [math.pi, math.pi, math.pi]]))
 ```
 
-We next aim to set our run settings using the *UQLibrary.Options* class but want to specify that we only use local sensitivity analysis and Sobol analysis. We also want to specify we use finite difference derivative approximations with step-size $h=10^{-6}$ and use 100000 samples for Sobol analysis. To construct the corresponding variable we call,
+We next aim to set our run settings using the *UQLibrary.Options* class but want to specify that we only use local sensitivity analysis and Sobol analysis. We also want to specify we use finite difference derivative approximations with step-size h=10<sup>-6</sup> and use 100000 samples for Sobol analysis. To construct the corresponding variable we call,
 
 ```
 options = UQLibrary.Options()
