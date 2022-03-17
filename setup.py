@@ -8,8 +8,8 @@ Created on Wed Mar 16 20:25:03 2022
 from distutils.core import setup
 
 from pathlib import Path
-this_directory = Path(__file__).parent
-long_description = (this_directory / "README.md").read_text()
+#this_directory = Path(__file__).parent
+#long_description = (this_directory / "README.md").read_text()
 
 setup(
     name='UQLibrary',
@@ -20,7 +20,7 @@ setup(
     url='https://github.com/HarleyHanes/UQLibrary-CourseProject',
     license='LICENSE',
     description='Robust set of sensitivity and identifiability analysis methods.',
-    long_description=long_description,
+    #long_description=long_description,
     install_requires=[
         "numpy >= 1.20.0",
         "scipy >= 1.7.1",
