@@ -17,7 +17,7 @@ setup(
     author='H. Hanes',
     author_email='hhanes@ncsu.edu',
     packages=['UQLibrary'],
-    url='http://pypi.python.org/pypi/UQLibrary/',
+    url='https://github.com/HarleyHanes/UQLibrary-CourseProject',
     license='LICENSE',
     description='Robust set of sensitivity and identifiability analysis methods.',
     long_description=long_description,
