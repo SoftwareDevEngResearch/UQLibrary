@@ -317,7 +317,7 @@ def print_results(results,model,options):
     """
     # Print Results
     #Results Header
-    print('Sensitivity results for nSampSobol=' + str(options.gsa.n_samp_sobol))
+    #print('Sensitivity results for nSampSobol=' + str(options.gsa.n_samp_sobol))
     #Local Sensitivity Analysis
     if options.lsa.run:
         print('\n Base POI Values')
@@ -332,10 +332,11 @@ def print_results(results,model,options):
               headers= np.append("",model.name_qoi)))
         #print("Fisher Matrix: " + str(results.lsa.fisher))
         #Active Subsapce Analysis
-        print('\n Active Supspace')
-        print(results.lsa.active_set)
-        print('\n Inactive Supspace')
-        print(results.lsa.inactive_set)
+        if options.lsa.run_param_subset:
+            print('\n Active Supspace')
+            print(results.lsa.active_set)
+            print('\n Inactive Supspace')
+            print(results.lsa.inactive_set)
     if options.gsa.run: 
         if options.gsa.run_sobol:
             if model.n_qoi==1:
@@ -351,13 +352,13 @@ def print_results(results,model,options):
     
         if options.gsa.run_morris:
             if model.n_qoi==1:
-                print('\n Morris Screening Results for' + model.name_qoi[0])
+                print('\n Morris Screening Results for ' + model.name_qoi[0])
                 print(tabulate(np.concatenate((model.name_poi.reshape(model.n_poi, 1), results.gsa.morris_mean_abs.reshape(model.n_poi, 1), \
                                                results.gsa.morris_std.reshape(model.n_poi, 1)), 1),
                     headers=["", "mu_star", "sigma"]))
             else:
                 for i_qoi in range(model.n_qoi):
-                    print('\n Morris Screening Results for' + model.name_qoi[i_qoi])
+                    print('\n Morris Screening Results for ' + model.name_qoi[i_qoi])
                     print(tabulate(np.concatenate(
                         (model.name_poi.reshape(model.n_poi, 1), results.gsa.morris_mean_abs[:,[i_qoi]].reshape(model.n_poi, 1), \
                      results.gsa.morris_std[:,[i_qoi]].reshape(model.n_poi, 1)), 1),

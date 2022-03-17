@@ -25,7 +25,7 @@ setup(
         "numpy >= 1.20.0",
         "scipy >= 1.7.1",
         "matplotlib >= 3.4.3",
-        "tabulate >= 0.8.9"
+        "tabulate >= 0.8.9",
         "mpi4py >= 3.1.3"
     ],
 )

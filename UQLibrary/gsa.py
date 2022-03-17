@@ -158,10 +158,10 @@ def get_sobol_sample(model,gsa_options):
     """
     n_samp_sobol = gsa_options.n_samp_sobol
     # Make 2 POI sample matrices with n_samp_sobol samples each
-    if np.all(model.dist_type!=np.array(["satelli normal", "satelli uniform"])):
-              warnings.warn("Non-satelli sampling algorithm used for Sobol analysis."\
-                            + " Suggested distribution types are satelli normal "+\
-                                "and satelli uniform.")
+    # if np.all(model.dist_type!=np.array(["satelli normal", "satelli uniform"])):
+    #           warnings.warn("Non-satelli sampling algorithm used for Sobol analysis."\
+    #                         + " Suggested distribution types are satelli normal "+\
+    #                             "and satelli uniform.")
     sample_compact = model.sample_fcn(2*n_samp_sobol)
     f_compact = model.eval_fcn(sample_compact)
     # Seperate sample into a and b for algorithm
@@ -182,7 +182,7 @@ def get_sobol_sample(model,gsa_options):
         samp_ab = samp_a.copy()
         samp_ab[:, i_param] = samp_b[:, i_param].copy()
         if model.n_qoi == 1:
-            f_ab[:, i_param] = model.eval_fcn(samp_ab)
+            f_ab[:, i_param] = model.eval_fcn(samp_ab).squeeze()
         else:
             f_ab[:, i_param, :] = model.eval_fcn(samp_ab)  # n_samp_sobol x nPOI x nQOI tensor
         del samp_ab
@@ -313,7 +313,7 @@ def calculate_morris(eval_fcn, morris_samp, pert_distance, logging = False):
         if f_eval_compact.ndim == 2:
             n_qoi = f_eval_compact.shape[1]
         elif f_eval_compact.ndim ==1:
-            n_qoi =1
+            n_qoi = 1
         else:
             raise Exception("More than 2 dimensions in f_eval")
             
@@ -379,7 +379,7 @@ def morris_seperate(qoi_compact, n_samp, n_poi, n_qoi):
         qoi_seperated = np.empty((n_samp, n_poi+1))
     #Seperate each parameter search for ease of computation
     for i_samp in range(n_samp):
-        qoi_seperated[i_samp] = qoi_compact[i_samp*(n_poi+1):(i_samp+1)*(n_poi+1)]
+        qoi_seperated[i_samp] = qoi_compact[i_samp*(n_poi+1):(i_samp+1)*(n_poi+1)].squeeze()
         
     return qoi_seperated
 

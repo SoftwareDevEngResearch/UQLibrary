@@ -182,13 +182,7 @@ def get_jacobian(eval_fcn, x_base, x_delta, method, **kwargs):
             if method.lower()== 'complex':
                 jac[i_qoi, i_poi] = np.imag(yPert[i_qoi] / x_delta)                 # Estimate Derivative w/ 2nd order complex
             elif method.lower() == 'finite':
-                print("xPert" + str(xPert))
-                print("x_base" + str(x_base))
-                print("yPert" + str(yPert))
-                print("y_base" + str(y_base))
-                print("x_delta" + str(x_delta))
                 jac[i_qoi, i_poi] = (yPert[i_qoi]-y_base[i_qoi]) / x_delta
-                print("Deriv: " + str(jac[i_qoi, i_poi]))
             #Only Scale Jacobian if 'scale' value is passed True in function call
             if scale:
                 jac[i_qoi, i_poi] *= x_base[i_poi] * np.sign(y_base[i_qoi]) / (sys.float_info.epsilon + y_base[i_qoi])

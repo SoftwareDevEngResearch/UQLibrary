@@ -66,12 +66,11 @@ def GetExample(example, **kwargs):
     elif example.lower() == 'ishigami (uniform)':
         model = uq.Model(eval_fcn=Ishigami,
                          base_poi=np.array([0, 0, 0]),
-                         dist_type="uniform",
+                         dist_type="saltelli uniform",
                          dist_param=np.array([[-math.pi, -math.pi, -math.pi], [math.pi, math.pi, math.pi]]))
         options.lsa.method = 'finite' 
         options.lsa.xDelta = 10**(-6)
-        options.gsa.nSampSobol = 4000000          # Use default number of samples
-        options.path='..\\Figures\\Ishigami(uniform)'
+        options.gsa.nSampSobol = 500000          # Use default number of samples
         
     elif example.lower() == 'ishigami (normal)':
         model = uq.Model(eval_fcn=Ishigami,
@@ -80,8 +79,7 @@ def GetExample(example, **kwargs):
                          dist_param=np.array([[0, 0, 0], [(2*math.pi)**2/12, (2*math.pi)**2/12, (2*math.pi)**2/12]]))
         options.lsa.method = 'finite' 
         options.lsa.xDelta = 10**(-6)
-        options.gsa.nSampSobol= 4000000          # Use default number of samples
-        options.path='..\\Figures\\Ishigami(normal)'
+        options.gsa.nSampSobol= 500000 
         
     elif example.lower() == 'trial function':
         model = uq.Model(eval_fcn=TrialFunction,
@@ -214,12 +212,12 @@ def Ishigami(params):
     if params.ndim == 1:
         return np.array([np.sin(params[0])+7*np.sin(params[1])**2+.1*(params[2]**4)*np.sin(params[0])])
     elif params.ndim == 2:
-        return np.array([np.sin(params[:, 0])+7*np.sin(params[:, 1])**2+.1*(params[:, 2]**4)*np.sin(params[:, 0])])
+        return np.sin(params[:, [0]])+7*np.sin(params[:, [1]])**2+.1*(params[:, [2]]**4)*np.sin(params[:, [0]])
 def TrialFunction(params):
     if params.ndim == 1:
         return np.array([params[0]+params[1]*(params[2]**2)])
     elif params.ndim == 2:
-        return params[:, 0]+params[:, 1]*(params[:, 2]**2)
+        return params[:, [0]]+params[:, [1]]*(params[:, [2]]**2)
 def Portfolio(params,c):
     if params.ndim == 1:
         return np.array([c[0]*params[0]+c[1]*params[1]])
